@@ -1,0 +1,187 @@
+:root {
+  color: #f8f1d8;
+  background:
+    radial-gradient(circle at top, rgba(75, 133, 124, 0.28), transparent 32%),
+    linear-gradient(180deg, #142124 0%, #091012 100%);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  user-select: none;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+button,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+.overlay-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.overlay-panel {
+  position: absolute;
+  border: 1px solid rgba(127, 209, 185, 0.22);
+  border-radius: 18px;
+  padding: 10px 12px;
+  backdrop-filter: blur(14px);
+  background: rgba(13, 24, 26, 0.82);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.18);
+  pointer-events: auto;
+}
+
+.hud-panel {
+  top: 18px;
+  left: 18px;
+  right: 18px;
+}
+
+.hud-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.hud-controls {
+  margin-top: 8px;
+}
+
+select {
+  padding: 8px 12px;
+  color: #f8f1d8;
+  background: #224149;
+  border: 0;
+  border-radius: 12px;
+}
+
+button {
+  padding: 8px 12px;
+  color: #f8f1d8;
+  background: #224149;
+  border: 0;
+  border-radius: 12px;
+}
+
+.board-shell {
+  position: absolute;
+  inset: 0;
+}
+
+.scene-mount {
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.panel-copy {
+  opacity: 0.72;
+}
+
+.debug-panel {
+  right: 18px;
+  bottom: 18px;
+  width: 260px;
+}
+
+.timeline-track {
+  position: relative;
+  height: 52px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.hud-timeline {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.timeline-note,
+.timeline-cursor {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.timeline-note {
+  width: 10px;
+  height: 100%;
+}
+
+.timeline-note.pending {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.timeline-note.matched {
+  background: #7fd1b9;
+}
+
+.timeline-note.missed {
+  background: #ff8f66;
+}
+
+.timeline-cursor {
+  width: 2px;
+  height: 100%;
+  background: #ffe08f;
+}
+
+.debug-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.debug-grid {
+  grid-template-columns: 1fr auto;
+}
+
+.hud-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 54px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8f1d8;
+}
+
+.hud-pill.solved {
+  background: rgba(127, 209, 185, 0.2);
+}
+
+@media (max-width: 1280px) {
+  .debug-panel {
+    width: auto;
+    left: 12px;
+    right: 12px;
+  }
+
+  .debug-panel {
+    display: none;
+  }
+
+  .hud-row {
+    flex-wrap: wrap;
+  }
+}
