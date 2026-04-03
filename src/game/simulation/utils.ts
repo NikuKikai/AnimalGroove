@@ -139,22 +139,22 @@ export function buildTriggerEvents(level: LevelDefinition, placements: Placement
 
   for (const animal of sortedAnimals) {
     const visits = sampleAnimalPathVisits(animal, level.loopBeats);
-    let previousPlacementId: string | undefined;
+    let previousPlacementInstanceId: string | undefined;
     for (const visit of visits) {
       const key = `${visit.cell.x},${visit.cell.y}`;
       const hit = validation.occupied.get(key);
-      const currentPlacementId = hit?.placement.blockId;
+      const currentPlacementInstanceId = hit ? placementInstanceKey(hit.placement) : undefined;
 
       if (!hit) {
-        previousPlacementId = undefined;
+        previousPlacementInstanceId = undefined;
         continue;
       }
 
-      if (currentPlacementId === previousPlacementId) {
+      if (currentPlacementInstanceId === previousPlacementInstanceId) {
         continue;
       }
 
-      previousPlacementId = currentPlacementId;
+      previousPlacementInstanceId = currentPlacementInstanceId;
 
       triggers.push({
         id: `${animal.id}-${hit.placement.blockId}-${visit.beat.toFixed(3)}-${visit.cell.x}-${visit.cell.y}`,
@@ -162,6 +162,7 @@ export function buildTriggerEvents(level: LevelDefinition, placements: Placement
         timbre: hit.block.timbre,
         animalId: animal.id,
         placementId: hit.placement.blockId,
+        placementInstanceId: placementInstanceKey(hit.placement),
         cell: visit.cell,
       });
     }
@@ -194,4 +195,8 @@ export function computePathMetrics(waypoints: Vec2[]): PathMetrics {
     segmentLengths,
     cumulativeLengths,
   };
+}
+
+export function placementInstanceKey(placement: Placement) {
+  return `${placement.blockId}:${placement.origin.x}:${placement.origin.y}:${placement.rotation}`;
 }

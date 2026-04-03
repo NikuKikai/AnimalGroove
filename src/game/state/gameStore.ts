@@ -3,6 +3,10 @@ import { ensembleLevel, tutorialLevel } from "../../data/levels";
 import { evaluatePlacements, validatePlacements } from "../simulation";
 import type { LevelDefinition, Placement, SimulationResult } from "../types";
 
+export type AudioChannelKey = "hit" | "reference" | "wrong";
+
+export type AudioMixState = Record<AudioChannelKey, { volume: number; muted: boolean }>;
+
 type GameState = {
   levels: LevelDefinition[];
   activeLevelId: string;
@@ -14,9 +18,12 @@ type GameState = {
   showPaths: boolean;
   currentBeat: number;
   simulation: SimulationResult;
+  audioMix: AudioMixState;
   setActiveLevel: (levelId: string) => void;
   setCurrentBeat: (beat: number) => void;
   togglePaths: () => void;
+  setAudioVolume: (channel: AudioChannelKey, volume: number) => void;
+  toggleAudioMute: (channel: AudioChannelKey) => void;
   startDrag: (blockId: string, pointer: { x: number; y: number }, rotation?: 0 | 90) => void;
   updateDragPointer: (pointer: { x: number; y: number }) => void;
   rotateDrag: () => void;
@@ -49,6 +56,11 @@ export const useGameStore = create<GameState>((set, get) => {
     showPaths: true,
     currentBeat: 0,
     simulation: computeSimulation(initialLevel, initialPlacements),
+    audioMix: {
+      hit: { volume: 1.05, muted: false },
+      reference: { volume: 0.18, muted: false },
+      wrong: { volume: 0.4, muted: false },
+    },
     setActiveLevel: (levelId) => {
       const nextLevel = getLevelById(levelId);
       const placements: Placement[] = [];
@@ -64,6 +76,26 @@ export const useGameStore = create<GameState>((set, get) => {
     },
     setCurrentBeat: (beat) => set({ currentBeat: beat }),
     togglePaths: () => set((state) => ({ showPaths: !state.showPaths })),
+    setAudioVolume: (channel, volume) =>
+      set((state) => ({
+        audioMix: {
+          ...state.audioMix,
+          [channel]: {
+            ...state.audioMix[channel],
+            volume,
+          },
+        },
+      })),
+    toggleAudioMute: (channel) =>
+      set((state) => ({
+        audioMix: {
+          ...state.audioMix,
+          [channel]: {
+            ...state.audioMix[channel],
+            muted: !state.audioMix[channel].muted,
+          },
+        },
+      })),
     startDrag: (blockId, pointer, rotation = 0) =>
       set({
         draggingBlockId: blockId,

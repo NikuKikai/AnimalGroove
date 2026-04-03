@@ -76,6 +76,7 @@ export type TriggerEvent = {
   timbre: string;
   animalId: string;
   placementId: string;
+  placementInstanceId: string;
   cell: Vec2;
 };
 

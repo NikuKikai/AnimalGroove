@@ -2,12 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioEngine } from "../game/audio/audioEngine";
 import { Transport } from "../game/engine/transport";
 import type { PreviewPlacement, StashPiece } from "../game/render/threeScene";
-import { ThreeScene } from "../game/render/threeScene";
+import { placementKey, ThreeScene } from "../game/render/threeScene";
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 import { validatePlacements } from "../game/simulation";
 import type { Placement } from "../game/types";
 
 const audioEngine = new AudioEngine();
+
+type LoadingState = {
+  active: boolean;
+  progress: number;
+  label: string;
+};
 
 type DragSession =
   | { source: "stash" }
@@ -17,15 +23,23 @@ export function BoardView() {
   const mountRef = useRef<HTMLDivElement>(null);
   const transportRef = useRef<Transport | null>(null);
   const sceneRef = useRef<ThreeScene | null>(null);
+  const levelRef = useRef(getActiveLevel({ activeLevelId: useGameStore.getState().activeLevelId }));
   const dragSessionRef = useRef<DragSession | null>(null);
   const previewRef = useRef<PreviewPlacement | undefined>(undefined);
   const lastBeatRef = useRef(0);
   const audioReadyRef = useRef(false);
   const audioTriggerRef = useRef(new Set<string>());
+  const loadRequestRef = useRef(0);
 
   const [preview, setPreview] = useState<PreviewPlacement | undefined>(undefined);
+  const [loading, setLoading] = useState<LoadingState>({
+    active: true,
+    progress: 0,
+    label: "Loading scene",
+  });
 
   const activeLevelId = useGameStore((state) => state.activeLevelId);
+  const levels = useGameStore((state) => state.levels);
   const placements = useGameStore((state) => state.placements);
   const draggingBlockId = useGameStore((state) => state.draggingBlockId);
   const draggingRotation = useGameStore((state) => state.draggingRotation);
@@ -33,6 +47,7 @@ export function BoardView() {
   const showPaths = useGameStore((state) => state.showPaths);
   const currentBeat = useGameStore((state) => state.currentBeat);
   const simulation = useGameStore((state) => state.simulation);
+  const audioMix = useGameStore((state) => state.audioMix);
   const setCurrentBeat = useGameStore((state) => state.setCurrentBeat);
   const placeBlock = useGameStore((state) => state.placeBlock);
   const removePlacementAt = useGameStore((state) => state.removePlacementAt);
@@ -42,7 +57,28 @@ export function BoardView() {
   const endDrag = useGameStore((state) => state.endDrag);
   const level = getActiveLevel({ activeLevelId });
 
+  useEffect(() => {
+    levelRef.current = level;
+  }, [level]);
+
+  useEffect(() => {
+    audioEngine.setMix(audioMix);
+  }, [audioMix]);
+
   const stashPieces = useMemo(() => buildStashPieces(level, placements, draggingBlockId), [draggingBlockId, level, placements]);
+  const pressedPlacementIds = useMemo(() => {
+    const pressed = new Set<string>();
+    for (const trigger of simulation.producedTriggers) {
+      const delta = normalizedBeatDelta(currentBeat, trigger.beat, level.loopBeats);
+      if (delta >= 0 && delta <= 0.22) {
+        const placement = placements.find((item) => placementKey(item) === trigger.placementInstanceId);
+        if (placement) {
+          pressed.add(placementKey(placement));
+        }
+      }
+    }
+    return pressed;
+  }, [currentBeat, level, placements, simulation.producedTriggers]);
 
   useEffect(() => {
     const scene = new ThreeScene();
@@ -55,12 +91,14 @@ export function BoardView() {
     transportRef.current = transport;
     const unsubscribe = transport.subscribe((beat) => {
       setCurrentBeat(beat);
+      const activeLevel = levelRef.current;
       scene.update(
-        level,
+        activeLevel,
         beat,
         useGameStore.getState().placements,
         useGameStore.getState().showPaths,
-        buildStashPieces(level, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
+        buildStashPieces(activeLevel, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
+        pressedPlacementIdsRef.current,
         previewRef.current,
       );
     });
@@ -102,33 +140,32 @@ export function BoardView() {
       }
 
       updateDragPointer({ x: event.clientX, y: event.clientY });
-      const cell = scene.getCellFromPointer(event.clientX, event.clientY, level);
+      const activeLevel = levelRef.current;
+      const cell = scene.getCellFromPointer(event.clientX, event.clientY, activeLevel, true);
       if (!cell) {
         setPreview(undefined);
         previewRef.current = undefined;
         return;
       }
 
+      const nextPlacement = {
+        blockId: state.draggingBlockId,
+        origin: cell,
+        rotation: state.draggingRotation,
+      };
       const nextPreview: PreviewPlacement = {
-        placement: {
-          blockId: state.draggingBlockId,
-          origin: cell,
-          rotation: state.draggingRotation,
-        },
-        valid: validatePlacements(level, [...useGameStore.getState().placements, {
-          blockId: state.draggingBlockId,
-          origin: cell,
-          rotation: state.draggingRotation,
-        }]).valid,
+        placement: nextPlacement,
+        valid: validatePlacements(activeLevel, [...useGameStore.getState().placements, nextPlacement]).valid,
       };
       setPreview(nextPreview);
       previewRef.current = nextPreview;
       scene.update(
-        level,
+        activeLevel,
         useGameStore.getState().currentBeat,
         useGameStore.getState().placements,
         useGameStore.getState().showPaths,
-        buildStashPieces(level, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
+        buildStashPieces(activeLevel, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
+        pressedPlacementIdsRef.current,
         nextPreview,
       );
     };
@@ -154,7 +191,8 @@ export function BoardView() {
 
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
-      const cell = scene.getCellFromPointer(event.clientX, event.clientY, level);
+      const activeLevel = levelRef.current;
+      const cell = scene.getCellFromPointer(event.clientX, event.clientY, activeLevel);
       if (cell) {
         removePlacementAt(cell.x, cell.y);
       }
@@ -173,7 +211,8 @@ export function BoardView() {
         return;
       }
 
-      const cell = scene.getCellFromPointer(pointer.x, pointer.y, level);
+      const activeLevel = levelRef.current;
+      const cell = scene.getCellFromPointer(pointer.x, pointer.y, activeLevel, true);
       if (!cell) {
         setPreview(undefined);
         previewRef.current = undefined;
@@ -181,17 +220,14 @@ export function BoardView() {
       }
 
       const rotation = useGameStore.getState().draggingRotation === 0 ? 90 : 0;
+      const nextPlacement = {
+        blockId: useGameStore.getState().draggingBlockId!,
+        origin: cell,
+        rotation,
+      };
       const nextPreview: PreviewPlacement = {
-        placement: {
-          blockId: useGameStore.getState().draggingBlockId!,
-          origin: cell,
-          rotation,
-        },
-        valid: validatePlacements(level, [...useGameStore.getState().placements, {
-          blockId: useGameStore.getState().draggingBlockId!,
-          origin: cell,
-          rotation,
-        }]).valid,
+        placement: nextPlacement,
+        valid: validatePlacements(activeLevel, [...useGameStore.getState().placements, nextPlacement]).valid,
       };
       setPreview(nextPreview);
       previewRef.current = nextPreview;
@@ -221,10 +257,46 @@ export function BoardView() {
       transport.dispose();
       scene.dispose();
     };
-  }, [endDrag, level, placeBlock, removePlacementAt, rotateDrag, setCurrentBeat, startDrag, updateDragPointer]);
+  }, [endDrag, placeBlock, removePlacementAt, rotateDrag, setCurrentBeat, startDrag, updateDragPointer]);
 
   useEffect(() => {
-    void sceneRef.current?.loadLevel(level);
+    const scene = sceneRef.current;
+    if (!scene) {
+      return;
+    }
+
+    const requestId = loadRequestRef.current + 1;
+    loadRequestRef.current = requestId;
+    setLoading({
+      active: true,
+      progress: 0,
+      label: "Loading scene",
+    });
+
+    const load = async () => {
+      await scene.loadLevel(level, (progress) => {
+        if (loadRequestRef.current !== requestId) {
+          return;
+        }
+        setLoading({
+          active: true,
+          progress,
+          label: "Loading scene",
+        });
+      });
+
+      if (loadRequestRef.current !== requestId) {
+        return;
+      }
+
+      setLoading({
+        active: false,
+        progress: 1,
+        label: "Ready",
+      });
+    };
+
+    void load();
     transportRef.current?.updateConfig(level.bpm, level.loopBeats);
     transportRef.current?.reset();
     lastBeatRef.current = 0;
@@ -234,8 +306,19 @@ export function BoardView() {
   }, [level]);
 
   useEffect(() => {
-    sceneRef.current?.update(level, currentBeat, placements, showPaths, stashPieces, preview);
-  }, [currentBeat, level, placements, preview, showPaths, stashPieces]);
+    const modelPaths = levels.flatMap((entry) =>
+      entry.animals
+        .map((animal) => entry.models[animal.animalType])
+        .filter((path): path is string => Boolean(path)),
+    );
+
+    void ThreeScene.preloadModels(modelPaths);
+  }, [levels]);
+
+  useEffect(() => {
+    pressedPlacementIdsRef.current = pressedPlacementIds;
+    sceneRef.current?.update(level, currentBeat, placements, showPaths, stashPieces, pressedPlacementIds, preview);
+  }, [currentBeat, level, placements, preview, pressedPlacementIds, showPaths, stashPieces]);
 
   useEffect(() => {
     if (currentBeat < lastBeatRef.current) {
@@ -271,10 +354,25 @@ export function BoardView() {
 
   return (
     <section className="board-shell">
-      <div className="scene-mount" ref={mountRef} />
+      <div
+        className={`scene-mount ${loading.active ? "is-loading" : ""} ${draggingBlockId ? "is-dragging" : ""}`}
+        ref={mountRef}
+      />
+      {loading.active ? (
+        <div className="scene-loading" aria-live="polite">
+          <div className="scene-loading-bar">
+            <span className="scene-loading-fill" style={{ width: `${Math.round(loading.progress * 100)}%` }} />
+          </div>
+          <span className="scene-loading-label" title={loading.label}>
+            {Math.round(loading.progress * 100)}%
+          </span>
+        </div>
+      ) : null}
     </section>
   );
 }
+
+const pressedPlacementIdsRef: { current: Set<string> } = { current: new Set<string>() };
 
 function crossedBeat(previous: number, current: number, target: number) {
   if (current >= previous) {
@@ -282,6 +380,11 @@ function crossedBeat(previous: number, current: number, target: number) {
   }
 
   return target >= previous || target < current || Math.abs(target - current) < 0.0001;
+}
+
+function normalizedBeatDelta(currentBeat: number, targetBeat: number, loopBeats: number) {
+  const raw = currentBeat - targetBeat;
+  return raw >= 0 ? raw : raw + loopBeats;
 }
 
 function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: Placement[], draggingBlockId?: string): StashPiece[] {
@@ -293,22 +396,21 @@ function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: 
     usage.set(draggingBlockId, (usage.get(draggingBlockId) ?? 0) + 1);
   }
 
-  const reserveCells = buildReserveCells(level.board.width, level.board.height);
-  let reserveIndex = 0;
+  const occupied = new Set<string>();
+  const candidates = buildReserveCells(level.board.width, level.board.height);
   return level.inventory.flatMap((block) => {
     const used = usage.get(block.id) ?? 0;
-    const remaining = Math.max(0, block.quantity - used);
-    return Array.from({ length: remaining }, (_, index) => {
-      const cell = reserveCells[reserveIndex % reserveCells.length];
-      reserveIndex += 1;
+    const slots = Array.from({ length: block.quantity }, (_, index) => {
+      const cell = findReserveOrigin(candidates, occupied, block.width, block.height);
       return {
         pieceId: `${block.id}-${index}`,
         blockId: block.id,
         rotation: 0,
-        worldX: cell.x + 0.5,
-        worldZ: cell.y + 0.5,
+        worldX: cell.x,
+        worldZ: cell.y,
       };
     });
+    return slots.slice(Math.min(used, slots.length));
   });
 }
 
@@ -320,5 +422,39 @@ function buildReserveCells(width: number, height: number) {
   for (let y = -1; y <= height; y += 1) {
     cells.push({ x: -2, y }, { x: width + 1, y });
   }
-  return cells;
+  const unique = new Map<string, { x: number; y: number }>();
+  for (const cell of cells) {
+    unique.set(`${cell.x},${cell.y}`, cell);
+  }
+  return [...unique.values()];
+}
+
+function findReserveOrigin(
+  candidates: { x: number; y: number }[],
+  occupied: Set<string>,
+  width: number,
+  height: number,
+) {
+  for (const candidate of candidates) {
+    let canPlace = true;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (occupied.has(`${candidate.x + x},${candidate.y + y}`)) {
+          canPlace = false;
+        }
+      }
+    }
+    if (!canPlace) {
+      continue;
+    }
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        occupied.add(`${candidate.x + x},${candidate.y + y}`);
+      }
+    }
+    return candidate;
+  }
+
+  return candidates[0] ?? { x: -2, y: -2 };
 }
