@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { LevelDefinition, Placement } from "../types";
@@ -537,7 +538,7 @@ export class ThreeScene {
     }
 
     const loader = new GLTFLoader();
-    const pending = loader.loadAsync(path).then((gltf) => gltf.scene);
+    const pending = loader.loadAsync(path).then((gltf: GLTF) => gltf.scene);
     ThreeScene.modelTemplateCache.set(path, pending);
     return pending;
   }
@@ -584,7 +585,7 @@ function createBlockMesh(
 
 function applyPickData(root: THREE.Object3D, data: PickData) {
   root.userData = { ...data };
-  root.traverse((child) => {
+  root.traverse((child: THREE.Object3D) => {
     child.userData = { ...data };
   });
 }

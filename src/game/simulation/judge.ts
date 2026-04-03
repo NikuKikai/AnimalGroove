@@ -1,4 +1,4 @@
-import type { JudgedNote, LevelDefinition, Placement, SimulationResult, TriggerEvent } from "../types";
+import type { JudgedNote, LevelDefinition, NoteState, Placement, SimulationResult, TriggerEvent } from "../types";
 import { buildTriggerEvents } from "./utils";
 
 export function judgeTriggers(
@@ -6,7 +6,7 @@ export function judgeTriggers(
   producedTriggers: TriggerEvent[],
 ): SimulationResult {
   const targetNotes: JudgedNote[] = level.targetRhythm
-    .map((note) => ({ ...note, state: "pending" }))
+    .map((note) => ({ ...note, state: "pending" as NoteState }))
     .sort((left, right) => left.beat - right.beat);
   const extras: TriggerEvent[] = [];
   const unmatchedTargets = new Set(targetNotes.map((note) => note.id));

@@ -42,8 +42,6 @@ export function BoardView() {
   const levels = useGameStore((state) => state.levels);
   const placements = useGameStore((state) => state.placements);
   const draggingBlockId = useGameStore((state) => state.draggingBlockId);
-  const draggingRotation = useGameStore((state) => state.draggingRotation);
-  const dragPointer = useGameStore((state) => state.dragPointer);
   const showPaths = useGameStore((state) => state.showPaths);
   const currentBeat = useGameStore((state) => state.currentBeat);
   const simulation = useGameStore((state) => state.simulation);
@@ -148,7 +146,7 @@ export function BoardView() {
         return;
       }
 
-      const nextPlacement = {
+      const nextPlacement: Placement = {
         blockId: state.draggingBlockId,
         origin: cell,
         rotation: state.draggingRotation,
@@ -220,7 +218,7 @@ export function BoardView() {
       }
 
       const rotation = useGameStore.getState().draggingRotation === 0 ? 90 : 0;
-      const nextPlacement = {
+      const nextPlacement: Placement = {
         blockId: useGameStore.getState().draggingBlockId!,
         origin: cell,
         rotation,
@@ -402,13 +400,14 @@ function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: 
     const used = usage.get(block.id) ?? 0;
     const slots = Array.from({ length: block.quantity }, (_, index) => {
       const cell = findReserveOrigin(candidates, occupied, block.width, block.height);
-      return {
+      const stashPiece: StashPiece = {
         pieceId: `${block.id}-${index}`,
         blockId: block.id,
         rotation: 0,
         worldX: cell.x,
         worldZ: cell.y,
       };
+      return stashPiece;
     });
     return slots.slice(Math.min(used, slots.length));
   });
