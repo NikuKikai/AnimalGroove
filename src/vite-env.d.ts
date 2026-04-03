@@ -1,1 +1,1 @@
-declare module "tone";
+/// <reference types="vite/client" />
