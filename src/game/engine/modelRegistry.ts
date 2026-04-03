@@ -1,7 +1,7 @@
 import type { ModelRegistry } from "../types";
 
 function modelPath(filename: string) {
-  return `${import.meta.env.BASE_URL}3Dmodels/${filename}`;
+  return new URL(`3Dmodels/${filename}`, document.baseURI).toString();
 }
 
 export const defaultModelRegistry: ModelRegistry = {
