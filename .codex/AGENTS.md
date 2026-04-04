@@ -29,3 +29,12 @@
 - Avoid long-running `npm run dev` from the agent unless explicitly needed.
 - Prefer terminating checks: `tsc -b`, `vitest run`, `vite build`.
 - Keep comments in code in English.
+
+## Deployment Notes
+- For GitHub Pages, asset paths must not assume site-root `/...` URLs. Prefer page-relative paths for static assets that live under `public/`.
+- Keep only one canonical model asset directory. In this repo it is `public/3Dmodels`; do not keep a duplicate root-level `3Dmodels`.
+- GitHub Pages CI hit npm optional-dependency issues with Rollup. The repo currently works around this by:
+- Using `npm install` in the Pages workflow instead of `npm ci`.
+- Pinning `@rollup/rollup-linux-x64-gnu` in `optionalDependencies`.
+- Three.js examples imports may need local `.d.ts` shims in strict TypeScript projects.
+- Do not assume local build success means CI success when local `node_modules` has been partially damaged by interrupted npm commands or Windows file locks.
