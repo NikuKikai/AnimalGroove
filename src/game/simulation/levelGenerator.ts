@@ -5,6 +5,7 @@ import type { AnimalDefinition, LevelDefinition, Placement, RhythmEvent, Vec2 } 
 const animalTypes = ["fox", "panda", "cat", "dog", "lion", "tiger"];
 const palette = ["#ffaf45", "#58c4dd", "#ffc857", "#b8e986", "#ff7f7f", "#b291ff"];
 
+/** Builds a basic solvable level scaffold from a target rhythm pattern. */
 export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): LevelDefinition {
   const loopBeats = Math.max(4, Math.ceil(Math.max(...rhythm.map((event) => event.beat), 0) + 1));
   const timbres = [...new Set(rhythm.map((event) => event.timbre))];
@@ -70,6 +71,7 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
   });
 }
 
+/** Builds a closed waypoint loop used by generated runner animals. */
 function buildLoopPath(loopBeats: number, y: number): Vec2[] {
   if (loopBeats <= 4) {
     return [

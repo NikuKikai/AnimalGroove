@@ -13,6 +13,7 @@ export type OccupiedCell = {
   cell: Vec2;
 };
 
+/** Returns the axis-aligned size of a block after applying rotation. */
 export function rotateDimensions(block: PlaceableBlock, rotation: Placement["rotation"]) {
   if (rotation === 90) {
     return { width: block.height, height: block.width };
@@ -21,14 +22,17 @@ export function rotateDimensions(block: PlaceableBlock, rotation: Placement["rot
   return { width: block.width, height: block.height };
 }
 
+/** Returns blocked cells as a string-keyed set for quick lookup. */
 export function getBlockedCellSet(level: LevelDefinition) {
   return new Set((level.board.blockedCells ?? []).map((cell) => `${cell.x},${cell.y}`));
 }
 
+/** Builds a map from inventory block id to block definition. */
 export function getInventoryMap(level: LevelDefinition) {
   return new Map(level.inventory.map((block) => [block.id, block]));
 }
 
+/** Expands a placement into the cells covered by its footprint. */
 export function placementFootprint(block: PlaceableBlock, placement: Placement): Vec2[] {
   const { width, height } = rotateDimensions(block, placement.rotation);
   const footprint: Vec2[] = [];
@@ -42,6 +46,7 @@ export function placementFootprint(block: PlaceableBlock, placement: Placement):
   return footprint;
 }
 
+/** Validates placements for bounds, overlap, blocked cells, and inventory counts. */
 export function validatePlacements(level: LevelDefinition, placements: Placement[]) {
   const inventoryMap = getInventoryMap(level);
   const blocked = getBlockedCellSet(level);
@@ -96,6 +101,7 @@ type PathMetrics = {
   cumulativeLengths: number[];
 };
 
+/** Samples the beat positions where an animal reaches its waypoint cells. */
 export function sampleAnimalPathVisits(
   animal: AnimalDefinition,
   loopBeats: number,
@@ -128,6 +134,7 @@ export function sampleAnimalPathVisits(
   return visits.sort((left, right) => left.beat - right.beat);
 }
 
+/** Builds trigger events from animal visits over placed blocks. */
 export function buildTriggerEvents(level: LevelDefinition, placements: Placement[]): TriggerEvent[] {
   const validation = validatePlacements(level, placements);
   if (!validation.valid || !validation.occupied) {
@@ -171,11 +178,13 @@ export function buildTriggerEvents(level: LevelDefinition, placements: Placement
   return triggers.sort((left, right) => left.beat - right.beat);
 }
 
+/** Wraps a beat value into the level loop range. */
 export function wrapBeat(beat: number, loopBeats: number) {
   const wrapped = beat % loopBeats;
   return wrapped < 0 ? wrapped + loopBeats : wrapped;
 }
 
+/** Computes segment and cumulative distances for a closed waypoint loop. */
 export function computePathMetrics(waypoints: Vec2[]): PathMetrics {
   const segmentLengths: number[] = [];
   const cumulativeLengths: number[] = [0];
@@ -197,6 +206,7 @@ export function computePathMetrics(waypoints: Vec2[]): PathMetrics {
   };
 }
 
+/** Produces a stable identifier for a concrete placed block instance. */
 export function placementInstanceKey(placement: Placement) {
   return `${placement.blockId}:${placement.origin.x}:${placement.origin.y}:${placement.rotation}`;
 }

@@ -1,5 +1,6 @@
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 
+/** Renders the top HUD with level controls, hints, and audio mix controls. */
 export function Hud() {
   const activeLevelId = useGameStore((state) => state.activeLevelId);
   const levels = useGameStore((state) => state.levels);
@@ -89,6 +90,7 @@ type AudioControlProps = {
   onToggleMute: () => void;
 };
 
+/** Renders one audio channel control row with a volume slider and mute toggle. */
 function AudioControl({ label, value, muted, onChange, onToggleMute }: AudioControlProps) {
   return (
     <label className={`audio-control ${muted ? "is-muted" : ""}`} title={`${label} volume`}>

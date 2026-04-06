@@ -71,6 +71,7 @@ export class ThreeScene {
     iconTextureCache: new Map(),
   };
 
+  /** Creates the scene, camera, renderer, and shared lights. */
   constructor() {
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.scene.background = new THREE.Color("#0f1718");
@@ -83,6 +84,7 @@ export class ThreeScene {
     this.scene.add(ambientLight, directionalLight);
   }
 
+  /** Preloads unique model assets so later level switches can reuse them. */
   static async preloadModels(paths: string[], onProgress?: (progress: number) => void) {
     const uniquePaths = [...new Set(paths)];
     if (uniquePaths.length === 0) {
@@ -101,16 +103,19 @@ export class ThreeScene {
     );
   }
 
+  /** Mounts the WebGL canvas into a host element. */
   mount(element: HTMLDivElement) {
     this.mountedElement = element;
     element.appendChild(this.renderer.domElement);
     this.resize();
   }
 
+  /** Returns the renderer canvas used for pointer event wiring. */
   getDomElement() {
     return this.renderer.domElement;
   }
 
+  /** Resizes the renderer and camera to match the mounted element. */
   resize() {
     if (!this.mountedElement) {
       return;
@@ -122,6 +127,7 @@ export class ThreeScene {
     this.renderer.setSize(clientWidth, clientHeight);
   }
 
+  /** Reconfigures the board and animal content for a new level. */
   async loadLevel(level: LevelDefinition, onProgress?: (progress: number) => void) {
     const version = ++this.loadVersion;
     this.clearDynamicLevel();
@@ -132,6 +138,7 @@ export class ThreeScene {
     await this.addAnimals(level, version, onProgress);
   }
 
+  /** Renders the current frame from gameplay state and transient preview state. */
   update(
     level: LevelDefinition,
     beat: number,
@@ -151,6 +158,7 @@ export class ThreeScene {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /** Converts a screen-space pointer position into a board or reserve cell. */
   getCellFromPointer(clientX: number, clientY: number, level: LevelDefinition, includeReserve = false) {
     if (!this.mountedElement) {
       return undefined;
@@ -180,6 +188,7 @@ export class ThreeScene {
     return { x, y };
   }
 
+  /** Returns the first stash or placement object hit by a pointer ray. */
   pickSceneObject(clientX: number, clientY: number): SceneHit | undefined {
     if (!this.mountedElement) {
       return undefined;
@@ -222,6 +231,7 @@ export class ThreeScene {
     return undefined;
   }
 
+  /** Releases scene resources and detaches the canvas. */
   dispose() {
     this.clearLevel();
     this.renderer.dispose();
@@ -230,6 +240,7 @@ export class ThreeScene {
     }
   }
 
+  /** Clears both persistent and dynamic scene content. */
   private clearLevel() {
     this.clearDynamicLevel();
     this.removeObject(this.state.boardGrid);
@@ -255,6 +266,7 @@ export class ThreeScene {
     };
   }
 
+  /** Clears level-specific meshes while preserving reusable board objects. */
   private clearDynamicLevel() {
     for (const object of [
       ...this.state.animalRoots.values(),
@@ -277,6 +289,7 @@ export class ThreeScene {
     this.state.previewSignature = undefined;
   }
 
+  /** Creates or updates the board meshes and grids for the active level. */
   private configureBoard(level: LevelDefinition) {
     const reserveWidth = level.board.width + this.reserveInset * 2;
     const reserveHeight = level.board.height + this.reserveInset * 2;
@@ -325,6 +338,7 @@ export class ThreeScene {
     );
   }
 
+  /** Creates or updates a line grid mesh for the given rectangular bounds. */
   private replaceGrid(
     existing: THREE.LineSegments | undefined,
     minX: number,
@@ -361,6 +375,7 @@ export class ThreeScene {
     return existing;
   }
 
+  /** Draws debug path lines for every animal loop. */
   private addPaths(level: LevelDefinition) {
     for (const animal of level.animals) {
       const points = animal.path.waypoints.map((point) => new THREE.Vector3(point.x, 0.08, point.y));
@@ -375,6 +390,7 @@ export class ThreeScene {
     }
   }
 
+  /** Loads and instantiates animal meshes for the active level. */
   private async addAnimals(level: LevelDefinition, version: number, onProgress?: (progress: number) => void) {
     if (level.animals.length === 0) {
       onProgress?.(1);
@@ -417,6 +433,7 @@ export class ThreeScene {
     }
   }
 
+  /** Updates animal transforms for the current beat position. */
   private updateAnimals(level: LevelDefinition, beat: number) {
     for (const animal of level.animals) {
       const point = sampleAnimalPosition(
@@ -441,6 +458,7 @@ export class ThreeScene {
     }
   }
 
+  /** Syncs placed block meshes with gameplay placements and hit states. */
   private updateBlocks(level: LevelDefinition, placements: Placement[], pressedPlacementIds: Set<string>) {
     const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
     const nextKeys = new Set<string>();
@@ -482,6 +500,7 @@ export class ThreeScene {
     }
   }
 
+  /** Syncs reserve-ring block meshes with the currently unused inventory. */
   private updateStash(level: LevelDefinition, stashPieces: StashPiece[]) {
     const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
     const nextKeys = new Set<string>();
@@ -520,6 +539,7 @@ export class ThreeScene {
     }
   }
 
+  /** Updates the ghost placement mesh shown while dragging a block. */
   private updatePreview(level: LevelDefinition, preview?: PreviewPlacement) {
     if (!preview) {
       if (this.state.previewMesh) {
@@ -561,6 +581,7 @@ export class ThreeScene {
     );
   }
 
+  /** Removes an object from the scene when it exists. */
   private removeObject(object?: THREE.Object3D) {
     if (!object) {
       return;
@@ -589,6 +610,7 @@ export class ThreeScene {
     });
   }
 
+  /** Loads and caches a model template keyed by asset path. */
   private static loadModelTemplate(path: string) {
     const cached = ThreeScene.modelTemplateCache.get(path);
     if (cached) {
@@ -602,6 +624,7 @@ export class ThreeScene {
   }
 }
 
+/** Creates the mesh group used for a block body and its icon plane. */
 function createBlockMesh(
   iconTextureCache: Map<string, THREE.Texture>,
   timbre: string,
@@ -641,6 +664,7 @@ function createBlockMesh(
   return group;
 }
 
+/** Copies pick metadata onto a root object and all of its descendants. */
 function applyPickData(root: THREE.Object3D, data: PickData) {
   root.userData = { ...data };
   root.traverse((child: THREE.Object3D) => {
@@ -648,6 +672,7 @@ function applyPickData(root: THREE.Object3D, data: PickData) {
   });
 }
 
+/** Returns the center offset needed to place a block footprint on integer grid cells. */
 function getDisplayOffset(block: { width: number; height: number }, rotation: 0 | 90) {
   const width = rotation === 90 ? block.height : block.width;
   const height = rotation === 90 ? block.width : block.height;
@@ -657,10 +682,12 @@ function getDisplayOffset(block: { width: number; height: number }, rotation: 0 
   };
 }
 
+/** Returns the stable key used to identify a placed block instance. */
 export function placementKey(placement: Placement) {
   return placementInstanceKey(placement);
 }
 
+/** Creates or reuses a cached icon texture for a timbre label. */
 function getIconTexture(cache: Map<string, THREE.Texture>, timbre: string) {
   const cached = cache.get(timbre);
   if (cached) {
@@ -694,6 +721,7 @@ function getIconTexture(cache: Map<string, THREE.Texture>, timbre: string) {
   return texture;
 }
 
+/** Draws a simple placeholder icon for a given timbre. */
 function drawDummyInstrumentIcon(context: CanvasRenderingContext2D, timbre: string) {
   switch (timbre) {
     case "kick":
@@ -737,6 +765,7 @@ function drawDummyInstrumentIcon(context: CanvasRenderingContext2D, timbre: stri
   }
 }
 
+/** Samples an animal's closed-loop position and jump height at a beat. */
 function sampleAnimalPosition(
   waypoints: { x: number; y: number }[],
   cycleBeats: number,

@@ -35,6 +35,7 @@
 - If local dependencies are broken, repair with `npm.cmd install --cache .npm-cache --include=dev`.
 - Do not use bare `npm exec tsc`; npm may download the unrelated `tsc` package instead of TypeScript.
 - Keep comments in code in English.
+- Toggle buttons (Hint, Mute) should only signal state via styling; do not toggle their text.
 
 ## Deployment Notes
 - For GitHub Pages, asset paths must not assume site-root `/...` URLs. Prefer page-relative paths for static assets that live under `public/`.

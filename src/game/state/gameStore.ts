@@ -36,14 +36,17 @@ type GameState = {
 
 const levels = [tutorialLevel, ensembleLevel];
 
+/** Resolves a level id to a concrete level definition. */
 function getLevelById(levelId: string) {
   return levels.find((level) => level.id === levelId) ?? levels[0];
 }
 
+/** Computes the current judged simulation for a level and placement set. */
 function computeSimulation(level: LevelDefinition, placements: Placement[]) {
   return evaluatePlacements(level, placements);
 }
 
+/** Central Zustand store for game state, placement state, and audio mix controls. */
 export const useGameStore = create<GameState>((set, get) => {
   const initialLevel = levels[0];
   const initialPlacements: Placement[] = [];
@@ -168,6 +171,7 @@ export const useGameStore = create<GameState>((set, get) => {
   };
 });
 
+/** Returns the fully resolved active level from a partial store snapshot. */
 export function getActiveLevel(state: Pick<GameState, "activeLevelId">) {
   return getLevelById(state.activeLevelId);
 }

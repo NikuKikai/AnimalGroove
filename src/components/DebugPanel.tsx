@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useGameStore } from "../game/state/gameStore";
 
+/** Displays a compact debugging summary of the current simulation state. */
 export function DebugPanel() {
   const simulation = useGameStore((state) => state.simulation);
   const placements = useGameStore((state) => state.placements);

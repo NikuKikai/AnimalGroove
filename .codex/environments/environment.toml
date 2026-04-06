@@ -3,7 +3,7 @@ version = 1
 name = "AnimalGroove"
 
 [setup]
-script = ""
+script = "npm ci --cache .npm-cache --include=dev || npm install --cache .npm-cache --include=dev"
 
 [[actions]]
 name = "Run"

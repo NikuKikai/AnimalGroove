@@ -1,5 +1,6 @@
 import type { ModelRegistry } from "../types";
 
+/** Builds a relative URL to a model asset under the public 3D model directory. */
 function modelPath(filename: string) {
   return `./3Dmodels/${filename}`;
 }

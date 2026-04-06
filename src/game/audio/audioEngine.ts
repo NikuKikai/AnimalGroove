@@ -4,6 +4,7 @@ import type { AudioChannelKey, AudioMixState } from "../state/gameStore";
 
 type VoiceStyle = "hit" | "wrong" | "reference";
 
+/** Owns the synth graph used for reference, hit, and wrong-note playback. */
 export class AudioEngine {
   private started = false;
 
@@ -17,6 +18,7 @@ export class AudioEngine {
 
   private channelNodes = this.createChannelNodes();
 
+  /** Starts the shared WebAudio context on the first user gesture. */
   async start() {
     if (this.started) {
       return;
@@ -27,6 +29,7 @@ export class AudioEngine {
     this.lastScheduledTime = Tone.now();
   }
 
+  /** Applies UI-controlled mute and volume values to all audio channels. */
   setMix(mix: AudioMixState) {
     this.mix = mix;
     for (const style of Object.keys(mix) as VoiceStyle[]) {
@@ -34,6 +37,7 @@ export class AudioEngine {
     }
   }
 
+  /** Plays the target groove note in its reference mix state when still unresolved. */
   playReference(note: RhythmEvent, state: NoteState) {
     if (!this.started || state === "matched") {
       return;
@@ -46,6 +50,7 @@ export class AudioEngine {
     }
   }
 
+  /** Plays a produced trigger using the matched or wrong-note channel. */
   playTrigger(trigger: TriggerEvent, matched: boolean) {
     if (!this.started) {
       return;
@@ -63,6 +68,7 @@ export class AudioEngine {
     }
   }
 
+  /** Dispatches one synth hit through the requested channel graph. */
   private playOneShot(style: VoiceStyle, pitch: string, time: number, velocity: number) {
     const channel = style as AudioChannelKey;
     const mixState = this.mix[channel];
@@ -75,6 +81,7 @@ export class AudioEngine {
     node.synth.triggerAttackRelease(pitch, getDuration(style), time, velocity);
   }
 
+  /** Creates reusable synth, filter, and gain nodes for each audio channel. */
   private createChannelNodes(): Record<VoiceStyle, { synth: Tone.Synth; filter?: Tone.Filter; gain: Tone.Gain }> {
     const createChannel = (style: VoiceStyle) => {
       const synth = new Tone.Synth(getSynthConfig(style));
@@ -96,6 +103,7 @@ export class AudioEngine {
     };
   }
 
+  /** Returns a strictly increasing Tone.js schedule time. */
   private nextTime() {
     const now = Tone.now() + 0.02;
     const next = Math.max(now, this.lastScheduledTime + 0.002);
@@ -104,6 +112,7 @@ export class AudioEngine {
   }
 }
 
+/** Returns the synth configuration used for a channel style. */
 function getSynthConfig(style: VoiceStyle) {
   switch (style) {
     case "hit":
@@ -124,6 +133,7 @@ function getSynthConfig(style: VoiceStyle) {
   }
 }
 
+/** Returns the channel filter used to color reference and wrong notes. */
 function getFilter(style: VoiceStyle) {
   switch (style) {
     case "wrong":
@@ -135,6 +145,7 @@ function getFilter(style: VoiceStyle) {
   }
 }
 
+/** Returns the rhythmic duration used for a channel style. */
 function getDuration(style: VoiceStyle) {
   switch (style) {
     case "hit":
@@ -146,6 +157,7 @@ function getDuration(style: VoiceStyle) {
   }
 }
 
+/** Maps a timbre id to a simple synthesized pitch. */
 function mapTimbreToPitch(timbre: string) {
   switch (timbre) {
     case "kick":

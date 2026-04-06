@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 
+/** Renders the legacy DOM backpack view for block inventory testing. */
 export function Backpack() {
   const activeLevelId = useGameStore((state) => state.activeLevelId);
   const placements = useGameStore((state) => state.placements);

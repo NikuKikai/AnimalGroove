@@ -19,6 +19,7 @@ type DragSession =
   | { source: "stash" }
   | { source: "board"; originalPlacement: Placement };
 
+/** Hosts the Three.js scene and coordinates runtime input, loading, and audio playback. */
 export function BoardView() {
   const mountRef = useRef<HTMLDivElement>(null);
   const transportRef = useRef<Transport | null>(null);
@@ -372,6 +373,7 @@ export function BoardView() {
 
 const pressedPlacementIdsRef: { current: Set<string> } = { current: new Set<string>() };
 
+/** Detects whether a looping playback cursor crossed a target beat this frame. */
 function crossedBeat(previous: number, current: number, target: number) {
   if (current >= previous) {
     return target >= previous && target < current;
@@ -380,11 +382,13 @@ function crossedBeat(previous: number, current: number, target: number) {
   return target >= previous || target < current || Math.abs(target - current) < 0.0001;
 }
 
+/** Computes a positive wrapped beat delta inside the current loop. */
 function normalizedBeatDelta(currentBeat: number, targetBeat: number, loopBeats: number) {
   const raw = currentBeat - targetBeat;
   return raw >= 0 ? raw : raw + loopBeats;
 }
 
+/** Builds stable reserve-ring pieces for any inventory blocks not currently in use. */
 function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: Placement[], draggingBlockId?: string): StashPiece[] {
   const usage = new Map<string, number>();
   for (const placement of placements) {
@@ -413,6 +417,7 @@ function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: 
   });
 }
 
+/** Enumerates the reserve-ring cells used to lay out loose inventory blocks. */
 function buildReserveCells(width: number, height: number) {
   const cells: { x: number; y: number }[] = [];
   for (let x = -2; x < width + 2; x += 1) {
@@ -428,6 +433,7 @@ function buildReserveCells(width: number, height: number) {
   return [...unique.values()];
 }
 
+/** Finds the first reserve origin that can fit a block footprint without overlap. */
 function findReserveOrigin(
   candidates: { x: number; y: number }[],
   occupied: Set<string>,

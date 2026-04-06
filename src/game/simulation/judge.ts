@@ -1,6 +1,7 @@
 import type { JudgedNote, LevelDefinition, NoteState, Placement, SimulationResult, TriggerEvent } from "../types";
 import { buildTriggerEvents } from "./utils";
 
+/** Matches produced trigger events against target rhythm notes and scores the result. */
 export function judgeTriggers(
   level: LevelDefinition,
   producedTriggers: TriggerEvent[],
@@ -49,10 +50,12 @@ export function judgeTriggers(
   };
 }
 
+/** Runs trigger generation and judging for a concrete placement set. */
 export function simulateLevel(level: LevelDefinition, placements: Placement[]): SimulationResult {
   return judgeTriggers(level, buildTriggerEvents(level, placements));
 }
 
+/** Evaluates placements using the same simulation rules as the runtime. */
 export function evaluatePlacements(level: LevelDefinition, placements: Placement[]) {
   return simulateLevel(level, placements);
 }

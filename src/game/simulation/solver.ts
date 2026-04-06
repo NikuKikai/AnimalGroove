@@ -4,6 +4,7 @@ import { rotateDimensions, validatePlacements } from "./utils";
 
 type CandidatePlacement = Placement;
 
+/** Enumerates all in-bounds placements for a single inventory block. */
 function enumeratePlacementsForBlock(level: LevelDefinition, block: PlaceableBlock): CandidatePlacement[] {
   const rotations: Placement["rotation"][] = block.canRotate === false ? [0] : [0, 90];
   const candidates: CandidatePlacement[] = [];
@@ -24,6 +25,7 @@ function enumeratePlacementsForBlock(level: LevelDefinition, block: PlaceableBlo
   return candidates;
 }
 
+/** Orders blocks so larger pieces are searched earlier. */
 function sortBlocksForSearch(level: LevelDefinition) {
   return [...level.inventory].sort((left, right) => {
     const leftArea = left.width * left.height;
@@ -32,6 +34,7 @@ function sortBlocksForSearch(level: LevelDefinition) {
   });
 }
 
+/** Searches for a placement set that solves the given level. */
 export function solveLevel(level: LevelDefinition): SolveResult {
   if (level.referenceSolution) {
     const simulation = simulateLevel(level, level.referenceSolution);
@@ -54,6 +57,7 @@ export function solveLevel(level: LevelDefinition): SolveResult {
   let exploredStates = 0;
   const best = { score: -1, placements: [] as Placement[] };
 
+  /** Explores block placement combinations depth-first until a solution is found. */
   function search(
     index: number,
     placements: Placement[],
@@ -118,6 +122,7 @@ export function solveLevel(level: LevelDefinition): SolveResult {
   };
 }
 
+/** Produces k-combinations from an item list. */
 function choosePlacements<T>(items: T[], count: number, start = 0, current: T[] = [], output: T[][] = []) {
   if (current.length === count) {
     output.push([...current]);
@@ -133,6 +138,7 @@ function choosePlacements<T>(items: T[], count: number, start = 0, current: T[] 
   return output;
 }
 
+/** Converts placements into a set of occupied board cell keys. */
 export function placementsToCellSet(placements: Placement[], inventory: PlaceableBlock[]) {
   const blockMap = new Map(inventory.map((block) => [block.id, block]));
   const cells = new Set<string>();
@@ -154,6 +160,7 @@ export function placementsToCellSet(placements: Placement[], inventory: Placeabl
   return cells;
 }
 
+/** Lists all non-blocked cells that belong to the playable board. */
 export function findOpenCells(level: LevelDefinition): Vec2[] {
   const blocked = new Set((level.board.blockedCells ?? []).map((cell) => `${cell.x},${cell.y}`));
   const cells: Vec2[] = [];

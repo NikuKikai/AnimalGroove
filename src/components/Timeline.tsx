@@ -1,5 +1,6 @@
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 
+/** Renders a standalone target timeline panel for debugging and tuning. */
 export function Timeline() {
   const activeLevelId = useGameStore((state) => state.activeLevelId);
   const currentBeat = useGameStore((state) => state.currentBeat);

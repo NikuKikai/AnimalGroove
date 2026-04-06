@@ -1,5 +1,6 @@
 import type { GrooveGenerationOptions, RhythmEvent } from "../types";
 
+/** Creates a deterministic pseudo-random number generator from a seed. */
 function createRng(seed: number) {
   let state = seed >>> 0;
 
@@ -9,6 +10,7 @@ function createRng(seed: number) {
   };
 }
 
+/** Generates a simple step-based groove using weighted random density. */
 export function generateGroove(options: GrooveGenerationOptions): RhythmEvent[] {
   const rng = createRng(options.seed ?? 1337);
   const subdivision = 0.25;
