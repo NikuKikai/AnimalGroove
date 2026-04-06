@@ -15,6 +15,8 @@ export class AudioEngine {
     wrong: { volume: 0.4, muted: false },
   };
 
+  private channelNodes = this.createChannelNodes();
+
   async start() {
     if (this.started) {
       return;
@@ -27,6 +29,9 @@ export class AudioEngine {
 
   setMix(mix: AudioMixState) {
     this.mix = mix;
+    for (const style of Object.keys(mix) as VoiceStyle[]) {
+      this.channelNodes[style].gain.gain.value = mix[style].volume;
+    }
   }
 
   playReference(note: RhythmEvent, state: NoteState) {
@@ -65,26 +70,30 @@ export class AudioEngine {
       return;
     }
 
-    const synth = new Tone.Synth(getSynthConfig(style));
-    const filter = getFilter(style);
-    const gain = new Tone.Gain(mixState.volume);
+    const node = this.channelNodes[style];
+    node.gain.gain.value = mixState.volume;
+    node.synth.triggerAttackRelease(pitch, getDuration(style), time, velocity);
+  }
 
-    if (filter) {
-      synth.connect(filter);
-      filter.connect(gain);
-    } else {
-      synth.connect(gain);
-    }
+  private createChannelNodes(): Record<VoiceStyle, { synth: Tone.Synth; filter?: Tone.Filter; gain: Tone.Gain }> {
+    const createChannel = (style: VoiceStyle) => {
+      const synth = new Tone.Synth(getSynthConfig(style));
+      const filter = getFilter(style);
+      const gain = new Tone.Gain(this.mix[style].volume).toDestination();
+      if (filter) {
+        synth.connect(filter);
+        filter.connect(gain);
+      } else {
+        synth.connect(gain);
+      }
+      return { synth, filter, gain };
+    };
 
-    gain.toDestination();
-    synth.triggerAttackRelease(pitch, getDuration(style), time, velocity);
-
-    const disposeDelayMs = 1200;
-    window.setTimeout(() => {
-      synth.dispose();
-      filter?.dispose();
-      gain.dispose();
-    }, disposeDelayMs);
+    return {
+      hit: createChannel("hit"),
+      wrong: createChannel("wrong"),
+      reference: createChannel("reference"),
+    };
   }
 
   private nextTime() {
