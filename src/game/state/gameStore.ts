@@ -16,6 +16,7 @@ type GameState = {
   dragPointer?: { x: number; y: number };
   isPlaying: boolean;
   showPaths: boolean;
+  hintEnabled: boolean;
   currentBeat: number;
   simulation: SimulationResult;
   audioMix: AudioMixState;
@@ -53,7 +54,8 @@ export const useGameStore = create<GameState>((set, get) => {
     placements: initialPlacements,
     draggingRotation: 0,
     isPlaying: true,
-    showPaths: true,
+    showPaths: false,
+    hintEnabled: false,
     currentBeat: 0,
     simulation: computeSimulation(initialLevel, initialPlacements),
     audioMix: {
@@ -75,7 +77,14 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
     setCurrentBeat: (beat) => set({ currentBeat: beat }),
-    togglePaths: () => set((state) => ({ showPaths: !state.showPaths })),
+    togglePaths: () =>
+      set((state) => {
+        const next = !state.hintEnabled;
+        return {
+          hintEnabled: next,
+          showPaths: next,
+        };
+      }),
     setAudioVolume: (channel, volume) =>
       set((state) => ({
         audioMix: {

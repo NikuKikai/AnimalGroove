@@ -88,7 +88,19 @@ select {
 .hud-mix-group {
     flex: 1;
     justify-content: flex-end;
+    gap: 16px;
     flex-wrap: wrap;
+    position: relative;
+}
+
+.hud-mix-group::before {
+    content: "";
+    position: absolute;
+    right: calc(33% + 4px);
+    top: 15%;
+    bottom: 15%;
+    width: 1px;
+    background: rgba(127, 209, 185, 0.18);
 }
 
 select {
@@ -97,6 +109,44 @@ select {
     background: #224149;
     border: 0;
     border-radius: 12px;
+}
+
+.hint-button {
+    border-radius: 12px;
+    padding: 8px 14px;
+    border: 1px solid rgba(127, 209, 185, 0.5);
+    background: transparent;
+    color: #f8f1d8;
+    transition: background 0.2s ease;
+}
+
+.hint-button.is-active {
+    background: rgba(127, 209, 185, 0.15);
+}
+
+.audio-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.audio-control.is-muted .audio-label,
+.audio-control.is-muted .audio-slider {
+    opacity: 0.45;
+}
+
+.audio-slider {
+    width: 108px;
+}
+
+.audio-mute {
+    min-width: 68px;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.audio-mute.is-active {
+    background: #5c6b6a;
+    color: #f8f1d8;
 }
 
 button {

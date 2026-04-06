@@ -31,8 +31,8 @@ export function Hud() {
           <button type="button" onClick={resetPlacements}>
             Reset
           </button>
-          <button type="button" onClick={togglePaths}>
-            Paths {showPaths ? "On" : "Off"}
+          <button type="button" className={`hint-button ${showPaths ? "is-active" : ""}`} onClick={togglePaths}>
+            Path Hint
           </button>
         </div>
         <div className="hud-group hud-mix-group">
@@ -59,22 +59,24 @@ export function Hud() {
           />
         </div>
       </div>
-      <div className="hud-row hud-timeline-row">
-        <div className="hud-timeline" title="Target rhythm timeline. Green is matched, orange is missed, pale is pending.">
-          {level.targetRhythm.map((note) => {
-            const state = simulation.targetNotes.find((entry) => entry.id === note.id)?.state ?? "pending";
-            return (
-              <span
-                key={note.id}
-                className={`timeline-note ${state}`}
-                style={{ left: `${(note.beat / level.loopBeats) * 100}%` }}
-                title={`${note.timbre} @ beat ${note.beat}`}
-              />
-            );
-          })}
-          <span className="timeline-cursor" style={{ left: `${(currentBeat / level.loopBeats) * 100}%` }} />
+      {showPaths ? (
+        <div className="hud-row hud-timeline-row">
+          <div className="hud-timeline" title="Target rhythm timeline. Green is matched, orange is missed, pale is pending.">
+            {level.targetRhythm.map((note) => {
+              const state = simulation.targetNotes.find((entry) => entry.id === note.id)?.state ?? "pending";
+              return (
+                <span
+                  key={note.id}
+                  className={`timeline-note ${state}`}
+                  style={{ left: `${(note.beat / level.loopBeats) * 100}%` }}
+                  title={`${note.timbre} @ beat ${note.beat}`}
+                />
+              );
+            })}
+            <span className="timeline-cursor" style={{ left: `${(currentBeat / level.loopBeats) * 100}%` }} />
+          </div>
         </div>
-      </div>
+      ) : null}
     </header>
   );
 }
@@ -89,7 +91,7 @@ type AudioControlProps = {
 
 function AudioControl({ label, value, muted, onChange, onToggleMute }: AudioControlProps) {
   return (
-    <label className="audio-control" title={`${label} volume`}>
+    <label className={`audio-control ${muted ? "is-muted" : ""}`} title={`${label} volume`}>
       <span className="audio-label">{label}</span>
       <input
         className="audio-slider"
@@ -100,8 +102,8 @@ function AudioControl({ label, value, muted, onChange, onToggleMute }: AudioCont
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
       />
-      <button type="button" className={`audio-mute ${muted ? "is-muted" : ""}`} onClick={onToggleMute}>
-        {muted ? "Unmute" : "Mute"}
+      <button type="button" className={`audio-mute ${muted ? "is-active" : ""}`} onClick={onToggleMute} aria-pressed={muted}>
+        Mute
       </button>
     </label>
   );
