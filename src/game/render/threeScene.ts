@@ -30,9 +30,10 @@ type SceneState = {
   animalRoots: Map<string, THREE.Object3D>;
   animalFallbacks: Map<string, THREE.Object3D>;
   pathLines: THREE.Line[];
-  blockMeshes: THREE.Object3D[];
-  stashMeshes: THREE.Object3D[];
+  blockMeshes: Map<string, THREE.Object3D>;
+  stashMeshes: Map<string, THREE.Object3D>;
   previewMesh?: THREE.Object3D;
+  previewSignature?: string;
   reserveMesh?: THREE.Mesh;
   boardMesh?: THREE.Mesh;
   boardGrid?: THREE.LineSegments;
@@ -65,8 +66,8 @@ export class ThreeScene {
     animalRoots: new Map(),
     animalFallbacks: new Map(),
     pathLines: [],
-    blockMeshes: [],
-    stashMeshes: [],
+    blockMeshes: new Map(),
+    stashMeshes: new Map(),
     iconTextureCache: new Map(),
   };
 
@@ -189,7 +190,10 @@ export class ThreeScene {
     this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
 
-    const hits = this.raycaster.intersectObjects([...this.state.stashMeshes, ...this.state.blockMeshes], true);
+    const hits = this.raycaster.intersectObjects(
+      [...this.state.stashMeshes.values(), ...this.state.blockMeshes.values()],
+      true,
+    );
     let first = hits[0]?.object;
     if (!first) {
       return undefined;
@@ -232,13 +236,17 @@ export class ThreeScene {
     this.removeObject(this.state.reserveGrid);
     this.removeObject(this.state.reserveMesh);
     this.removeObject(this.state.boardMesh);
+    for (const texture of this.state.iconTextureCache.values()) {
+      texture.dispose();
+    }
     this.state = {
       animalRoots: new Map(),
       animalFallbacks: new Map(),
       pathLines: [],
-      blockMeshes: [],
-      stashMeshes: [],
+      blockMeshes: new Map(),
+      stashMeshes: new Map(),
       previewMesh: undefined,
+      previewSignature: undefined,
       reserveMesh: undefined,
       boardMesh: undefined,
       boardGrid: undefined,
@@ -252,20 +260,21 @@ export class ThreeScene {
       ...this.state.animalRoots.values(),
       ...this.state.animalFallbacks.values(),
       ...this.state.pathLines,
-      ...this.state.blockMeshes,
-      ...this.state.stashMeshes,
+      ...this.state.blockMeshes.values(),
+      ...this.state.stashMeshes.values(),
     ]) {
-      this.removeObject(object);
+      this.disposeSceneObject(object);
     }
     if (this.state.previewMesh) {
-      this.removeObject(this.state.previewMesh);
+      this.disposeSceneObject(this.state.previewMesh);
     }
     this.state.animalRoots.clear();
     this.state.animalFallbacks.clear();
     this.state.pathLines = [];
-    this.state.blockMeshes = [];
-    this.state.stashMeshes = [];
+    this.state.blockMeshes.clear();
+    this.state.stashMeshes.clear();
     this.state.previewMesh = undefined;
+    this.state.previewSignature = undefined;
   }
 
   private configureBoard(level: LevelDefinition) {
@@ -433,19 +442,23 @@ export class ThreeScene {
   }
 
   private updateBlocks(level: LevelDefinition, placements: Placement[], pressedPlacementIds: Set<string>) {
-    for (const mesh of this.state.blockMeshes) {
-      this.removeObject(mesh);
-    }
-    this.state.blockMeshes = [];
-
     const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
+    const nextKeys = new Set<string>();
     for (const placement of placements) {
       const block = blockMap.get(placement.blockId);
       if (!block) {
         continue;
       }
 
-      const mesh = createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, placement.rotation);
+      const meshKey = placementKey(placement);
+      nextKeys.add(meshKey);
+      let mesh = this.state.blockMeshes.get(meshKey);
+      if (!mesh) {
+        mesh = createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, placement.rotation);
+        this.state.blockMeshes.set(meshKey, mesh);
+        this.scene.add(mesh);
+      }
+
       const isPressed = pressedPlacementIds.has(placementKey(placement));
       const pressDepth = isPressed ? 0.1 : 0;
       mesh.scale.y = isPressed ? 0.52 : 1;
@@ -458,25 +471,34 @@ export class ThreeScene {
         kind: "placement",
         placement,
       });
-      this.state.blockMeshes.push(mesh);
-      this.scene.add(mesh);
+    }
+
+    for (const [meshKey, mesh] of this.state.blockMeshes) {
+      if (nextKeys.has(meshKey)) {
+        continue;
+      }
+      this.disposeSceneObject(mesh);
+      this.state.blockMeshes.delete(meshKey);
     }
   }
 
   private updateStash(level: LevelDefinition, stashPieces: StashPiece[]) {
-    for (const mesh of this.state.stashMeshes) {
-      this.removeObject(mesh);
-    }
-    this.state.stashMeshes = [];
-
     const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
+    const nextKeys = new Set<string>();
     for (const piece of stashPieces) {
       const block = blockMap.get(piece.blockId);
       if (!block) {
         continue;
       }
 
-      const mesh = createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, piece.rotation, 0.92);
+      const meshKey = piece.pieceId;
+      nextKeys.add(meshKey);
+      let mesh = this.state.stashMeshes.get(meshKey);
+      if (!mesh) {
+        mesh = createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, piece.rotation, 0.92);
+        this.state.stashMeshes.set(meshKey, mesh);
+        this.scene.add(mesh);
+      }
       mesh.position.set(
         piece.worldX + getDisplayOffset(block, piece.rotation).x,
         0.12,
@@ -487,18 +509,24 @@ export class ThreeScene {
         pieceId: piece.pieceId,
         blockId: piece.blockId,
       });
-      this.state.stashMeshes.push(mesh);
-      this.scene.add(mesh);
+    }
+
+    for (const [meshKey, mesh] of this.state.stashMeshes) {
+      if (nextKeys.has(meshKey)) {
+        continue;
+      }
+      this.disposeSceneObject(mesh);
+      this.state.stashMeshes.delete(meshKey);
     }
   }
 
   private updatePreview(level: LevelDefinition, preview?: PreviewPlacement) {
-    if (this.state.previewMesh) {
-      this.removeObject(this.state.previewMesh);
-      this.state.previewMesh = undefined;
-    }
-
     if (!preview) {
+      if (this.state.previewMesh) {
+        this.disposeSceneObject(this.state.previewMesh);
+        this.state.previewMesh = undefined;
+        this.state.previewSignature = undefined;
+      }
       return;
     }
 
@@ -507,21 +535,30 @@ export class ThreeScene {
       return;
     }
 
-    const mesh = createBlockMesh(
-      this.state.iconTextureCache,
-      block.timbre,
-      preview.valid ? block.color : "#ff5f57",
-      block,
-      preview.placement.rotation,
-      0.55,
-    );
+    const previewSignature = `${preview.placement.blockId}:${preview.placement.rotation}:${preview.valid}`;
+    let mesh = this.state.previewMesh;
+    if (!mesh || this.state.previewSignature !== previewSignature) {
+      if (mesh) {
+        this.disposeSceneObject(mesh);
+      }
+      mesh = createBlockMesh(
+        this.state.iconTextureCache,
+        block.timbre,
+        preview.valid ? block.color : "#ff5f57",
+        block,
+        preview.placement.rotation,
+        0.55,
+      );
+      this.state.previewMesh = mesh;
+      this.state.previewSignature = previewSignature;
+      this.scene.add(mesh);
+    }
+
     mesh.position.set(
       preview.placement.origin.x + getDisplayOffset(block, preview.placement.rotation).x,
       0.18,
       preview.placement.origin.y + getDisplayOffset(block, preview.placement.rotation).y,
     );
-    this.state.previewMesh = mesh;
-    this.scene.add(mesh);
   }
 
   private removeObject(object?: THREE.Object3D) {
@@ -529,6 +566,27 @@ export class ThreeScene {
       return;
     }
     this.scene.remove(object);
+  }
+
+  private disposeSceneObject(object?: THREE.Object3D) {
+    if (!object) {
+      return;
+    }
+    this.scene.remove(object);
+    object.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.geometry) {
+        mesh.geometry.dispose();
+      }
+      const material = mesh.material;
+      if (Array.isArray(material)) {
+        for (const item of material) {
+          item.dispose();
+        }
+      } else {
+        material?.dispose();
+      }
+    });
   }
 
   private static loadModelTemplate(path: string) {
