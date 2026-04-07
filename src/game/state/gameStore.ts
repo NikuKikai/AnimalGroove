@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ensembleLevel, tutorialLevel } from "../../data/levels";
-import { evaluatePlacements, generateGroove, generateLevelFromGroove, solveLevel, validatePlacements } from "../simulation";
+import { evaluatePlacements, generateLevelFromPaths, solveLevel, validatePlacements } from "../simulation";
 import type { LevelDefinition, Placement, SimulationResult } from "../types";
 
 export type AudioChannelKey = "hit" | "reference" | "wrong";
@@ -52,52 +52,20 @@ function computeSimulation(level: LevelDefinition, placements: Placement[]) {
 /** Builds a random but solvable test level and returns its generated identifier. */
 function buildRandomLevel(serial: number) {
   const seed = Date.now() + serial * 9973;
-  const loopBeatsOptions = [4, 5, 6, 7, 8];
+  const loopBeatsOptions = [6, 8];
   const loopBeats = loopBeatsOptions[seed % loopBeatsOptions.length];
+  const levelId = `generated-${serial}`;
+  const level = generateLevelFromPaths(levelId, {
+    seed,
+    loopBeats,
+    animalCount: 2 + (seed % 2),
+  });
   const bpm = 96 + (seed % 33);
-  const density = 0.35 + ((seed % 31) / 100);
-  const timbreSets = [
-    ["kick", "snare"],
-    ["kick", "hat"],
-    ["kick", "snare", "hat"],
-  ];
-  const timbres = timbreSets[seed % timbreSets.length];
-  const lanes = timbres.length > 2 ? ["drums", "perc"] : ["drums"];
-
-  for (let attempt = 0; attempt < 24; attempt += 1) {
-    const rhythm = generateGroove({
-      bpm,
-      loopBeats,
-      density: Math.min(0.8, density + attempt * 0.01),
-      lanes,
-      timbres,
-      seed: seed + attempt * 101,
-    });
-
-    if (rhythm.length < 2) {
-      continue;
-    }
-
-    const levelId = `generated-${serial}`;
-    const level = generateLevelFromGroove(levelId, rhythm);
-    return {
-      ...level,
-      name: `Generated ${serial}`,
-      description: `Random test level ${serial}`,
-      bpm,
-    };
-  }
-
-  const fallbackRhythm = [
-    { id: `fallback-${serial}-0`, lane: "drums", beat: 0, timbre: "kick", velocity: 1 },
-    { id: `fallback-${serial}-1`, lane: "drums", beat: 2, timbre: "snare", velocity: 0.92 },
-    { id: `fallback-${serial}-2`, lane: "drums", beat: 3, timbre: "kick", velocity: 0.85 },
-  ];
 
   return {
-    ...generateLevelFromGroove(`generated-${serial}`, fallbackRhythm),
+    ...level,
     name: `Generated ${serial}`,
-    description: `Random test level ${serial}`,
+    description: `Random path-first test level ${serial}`,
     bpm,
   };
 }

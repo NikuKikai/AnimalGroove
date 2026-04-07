@@ -22,7 +22,10 @@ type AssignedEvent = {
 type AnimalPlan = {
   animalType: string;
   timbre: string;
+  // The loop is represented as unit-length perimeter cells, so this also matches
+  // the total geometric distance of the route.
   perimeterSteps: number;
+  // This phase anchors step 0 to one concrete event beat.
   startPhaseBeat: number;
   assignments: AssignedEvent[];
 };
@@ -32,6 +35,7 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
   const loopBeats = Math.max(4, Math.ceil(Math.max(...rhythm.map((event) => event.beat), 0) + 1));
   const timbres = [...new Set(rhythm.map((event) => event.timbre))];
   const rng = createRng(hashSeed(`${id}:${JSON.stringify(rhythm)}`));
+  // First solve timing: partition target events into animal plans that can emit them exactly.
   const plans = timbres.flatMap((timbre) =>
     buildAnimalPlansForTimbre(
       rhythm.filter((event) => event.timbre === timbre).sort((left, right) => left.beat - right.beat),
@@ -40,20 +44,28 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
     ),
   );
 
+  // Generate around the origin first, then pack the final result tightly afterward.
   const center = { x: 0, y: 0 };
 
+  // Cells that are guaranteed to need a placed block for a specific timbre.
   const reservedPlacementCells = new Map<string, string>();
+  // Cells already used by each path. Path overlap is allowed, but we still track timbre usage
+  // so a new target block is not forced onto another timbre's route by accident.
   const reservedPathCells = new Map<string, Set<string>>();
   const animals: AnimalDefinition[] = plans.map((plan, index) => {
     let waypoints = buildSharedLoopPath(plan.perimeterSteps, index, center, rng, 0);
 
     for (let attempt = 0; attempt < 32; attempt += 1) {
+      // A path may overlap another path, but it must not pass through a cell that is already
+      // required as a different timbre's solution block.
       const crossesExistingPlacement = waypoints.some((point) => {
         const cellKey = `${point.x},${point.y}`;
         const reservedTimbre = reservedPlacementCells.get(cellKey);
         return Boolean(reservedTimbre && reservedTimbre !== plan.timbre);
       });
 
+      // Symmetrically, the concrete solution cells for this plan should not be placed onto
+      // another timbre's existing route, otherwise that foreign animal would create extras.
       const placesOntoExistingPath = plan.assignments.some((assignment) => {
         const point = waypoints[assignment.stepIndex];
         const cellKey = `${point.x},${point.y}`;
@@ -68,6 +80,7 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
       waypoints = buildSharedLoopPath(plan.perimeterSteps, index, center, rng, attempt + 1);
     }
 
+    // Record the full occupied route after the conflict search settles.
     for (const point of waypoints) {
       const cellKey = `${point.x},${point.y}`;
       const timbres = reservedPathCells.get(cellKey) ?? new Set<string>();
@@ -75,6 +88,7 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
       reservedPathCells.set(cellKey, timbres);
     }
 
+    // Record only the cells that must become solution blocks.
     for (const assignment of plan.assignments) {
       const point = waypoints[assignment.stepIndex];
       reservedPlacementCells.set(`${point.x},${point.y}`, plan.timbre);
@@ -101,6 +115,8 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
     for (const assignment of plan.assignments) {
       const point = animal.path.waypoints[assignment.stepIndex];
       const placementKey = `${plan.timbre}:${point.x},${point.y}`;
+      // If multiple same-timbre animals land on the same cell at their assigned beats,
+      // keep one shared block there. This preserves the intended "one tile, many triggers" puzzle space.
       if (!placementMap.has(placementKey)) {
         placementMap.set(placementKey, {
           blockId: `block-${plan.timbre}`,
@@ -152,6 +168,8 @@ function buildAnimalPlansForTimbre(events: RhythmEvent[], loopBeats: number, rng
   const plans: AnimalPlan[] = [];
 
   while (remaining.length > 0) {
+    // Greedily take the largest exact-fit subset each round. This biases the generator toward
+    // fewer animals and therefore denser shared-space puzzles.
     const plan = findBestSequence(remaining, loopBeats, rng);
     plans.push(plan);
 
@@ -173,6 +191,8 @@ function findBestSequence(events: RhythmEvent[], loopBeats: number, rng: () => n
 
   for (const animalType of generatedAnimalTypes) {
     const profile = getAnimalProfile(animalType);
+    // On generated loops we use unit-length steps, so speed * loopBeats must land on an integer
+    // perimeter length. Odd perimeters are skipped because the current loop builder emits rectangles.
     const perimeterSteps = Math.round(profile.speed * loopBeats);
     if (Math.abs(perimeterSteps - profile.speed * loopBeats) > 1e-6 || perimeterSteps < 8 || perimeterSteps % 2 !== 0) {
       continue;
@@ -183,12 +203,15 @@ function findBestSequence(events: RhythmEvent[], loopBeats: number, rng: () => n
       const usedSteps = new Set<number>();
 
       for (const event of events) {
+        // Convert beat offsets into step offsets using the species speed.
         const rawStep = wrapBeat(event.beat - seed.beat, loopBeats) * profile.speed;
         const stepIndex = Math.round(rawStep);
+        // Only accept exact fits. This keeps the generated reference solution lossless.
         if (Math.abs(rawStep - stepIndex) > 1e-4 || stepIndex < 0 || stepIndex >= perimeterSteps) {
           continue;
         }
 
+        // One loop position can only carry one target event for this single animal plan.
         if (usedSteps.has(stepIndex)) {
           continue;
         }
@@ -202,6 +225,8 @@ function findBestSequence(events: RhythmEvent[], loopBeats: number, rng: () => n
       }
 
       assignments.sort((left, right) => left.stepIndex - right.stepIndex);
+      // Prefer plans that explain more notes. As a tiebreaker, slightly prefer longer loops
+      // so the board does not collapse into lots of tiny circles.
       const score = assignments.length * 100 + perimeterSteps * 0.35 - (generatedAnimalTypes.indexOf(animalType) * 0.2) + rng();
       if (score <= bestScore) {
         continue;
@@ -242,9 +267,13 @@ function buildSharedLoopPath(
 ): Vec2[] {
   const halfPerimeter = perimeterSteps / 2;
   const minSpan = 2;
+  // A rectangle with side spans `spanX` and `spanY` has perimeter 2 * (spanX + spanY),
+  // so we only need to split half the perimeter between the two axes.
   const preferredX = Math.max(minSpan, Math.round(halfPerimeter * (0.3 + rng() * 0.25)));
   const spanX = clamp(preferredX + ((index + attempt) % 3), minSpan, halfPerimeter - minSpan);
   const spanY = Math.max(minSpan, halfPerimeter - spanX);
+  // Small deterministic offsets keep loops overlapping in one shared arena while still giving
+  // retries somewhere else to go if they collide with protected cells.
   const offset = sharedOffsets[(index + attempt) % sharedOffsets.length];
   const origin = {
     x: center.x - Math.floor(spanX / 2) + offset.x + Math.floor(attempt / sharedOffsets.length),
@@ -279,6 +308,8 @@ function buildRectangleLoop(origin: Vec2, spanX: number, spanY: number) {
 
 /** Packs generated geometry into a tight positive board rectangle with configurable padding. */
 function normalizeGeneratedLayout(animals: AnimalDefinition[], placements: Placement[], padding: number) {
+  // Everything is generated around the origin for convenience. Before returning the level,
+  // translate the whole layout into positive board space and shrink the board to the true bounds.
   const allPoints = animals.flatMap((animal) => animal.path.waypoints).concat(placements.map((placement) => placement.origin));
   const minX = Math.min(...allPoints.map((point) => point.x));
   const maxX = Math.max(...allPoints.map((point) => point.x));

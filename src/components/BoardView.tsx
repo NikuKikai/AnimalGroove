@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioEngine } from "../game/audio/audioEngine";
 import { Transport } from "../game/engine/transport";
 import type { PreviewPlacement, StashPiece } from "../game/render/threeScene";
-import { placementKey, ThreeScene } from "../game/render/threeScene";
+import { placementKey, RESERVE_MARGIN, ThreeScene } from "../game/render/threeScene";
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 import { validatePlacements } from "../game/simulation";
 import type { Placement } from "../game/types";
@@ -417,11 +417,12 @@ const pressedPlacementIdsRef: { current: Set<string> } = { current: new Set<stri
 
 /** Detects whether a looping playback cursor crossed a target beat this frame. */
 function crossedBeat(previous: number, current: number, target: number) {
+  const epsilon = 0.0001;
   if (current >= previous) {
-    return target >= previous && target < current;
+    return target > previous - epsilon && target <= current + epsilon;
   }
 
-  return target >= previous || target < current || Math.abs(target - current) < 0.0001;
+  return target > previous - epsilon || target <= current + epsilon;
 }
 
 /** Computes a positive wrapped beat delta inside the current loop. */
@@ -462,11 +463,18 @@ function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: 
 /** Enumerates the reserve-ring cells used to lay out loose inventory blocks. */
 function buildReserveCells(width: number, height: number) {
   const cells: { x: number; y: number }[] = [];
-  for (let x = -2; x < width + 2; x += 1) {
-    cells.push({ x, y: -2 }, { x, y: height + 1 });
-  }
-  for (let y = -1; y <= height; y += 1) {
-    cells.push({ x: -2, y }, { x: width + 1, y });
+  for (let ring = 2; ring <= RESERVE_MARGIN; ring += 1) {
+    const minX = -ring;
+    const maxX = width + ring - 1;
+    const minY = -ring;
+    const maxY = height + ring - 1;
+
+    for (let x = minX; x <= maxX; x += 1) {
+      cells.push({ x, y: minY }, { x, y: maxY });
+    }
+    for (let y = minY + 1; y < maxY; y += 1) {
+      cells.push({ x: minX, y }, { x: maxX, y });
+    }
   }
   const unique = new Map<string, { x: number; y: number }>();
   for (const cell of cells) {
@@ -503,5 +511,5 @@ function findReserveOrigin(
     return candidate;
   }
 
-  return candidates[0] ?? { x: -2, y: -2 };
+  return candidates[0] ?? { x: -RESERVE_MARGIN, y: -RESERVE_MARGIN };
 }

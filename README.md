@@ -62,6 +62,7 @@ Tool scripts:
 npm run groove
 npm run solve
 npm run generate-level
+npm run generate-level-paths
 ```
 
 ## Project Structure
@@ -69,6 +70,7 @@ npm run generate-level
 - `src/`: runtime game code, UI, rendering, simulation
 - `public/3Dmodels/`: animal model assets used by the game
 - `scripts/`: CLI utilities for groove / level generation and solving
+- `docs/level-generation.md`: notes on groove-first vs path-first generation
 - `test/`: simulation tests
 - `.codex/`: project-specific notes and agent memory
 

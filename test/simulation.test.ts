@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ensembleLevel, tutorialLevel } from "../src/data/levels";
-import { evaluatePlacements, generateLevelFromGroove, solveLevel } from "../src/game/simulation";
+import { evaluatePlacements, generateLevelFromGroove, generateLevelFromPaths, solveLevel } from "../src/game/simulation";
 import type { RhythmEvent } from "../src/game/types";
 
 describe("simulation", () => {
@@ -45,6 +45,27 @@ describe("simulation", () => {
   it("ensemble level reports simulation output", () => {
     const result = evaluatePlacements(ensembleLevel, ensembleLevel.referenceSolution ?? []);
     expect(result.targetNotes.length).toBeGreaterThan(0);
+  });
+
+  it("path-first generated level stays solvable and compact", () => {
+    const level = generateLevelFromPaths("path-first-test", {
+      seed: 42,
+      loopBeats: 8,
+      animalCount: 3,
+    });
+    const solution = level.referenceSolution ?? [];
+    const result = evaluatePlacements(level, solution);
+    const footprintArea = level.board.width * level.board.height;
+
+    expect(solution.length).toBeGreaterThan(0);
+    expect(result.solved).toBe(true);
+    expect(level.targetRhythm.length).toBe(result.producedTriggers.length);
+    expect(level.animals.some((animal, index, animals) =>
+      animals.some((other, otherIndex) =>
+        otherIndex > index && animal.path.waypoints.some((point) => other.path.waypoints.some((peer) => peer.x === point.x && peer.y === point.y)),
+      ),
+    )).toBe(true);
+    expect(footprintArea).toBeLessThanOrEqual(225);
   });
 
   it("triggers adjacent same-block placements independently", () => {

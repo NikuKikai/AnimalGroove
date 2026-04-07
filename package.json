@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "groove": "tsx scripts/generate-groove.ts",
     "solve": "tsx scripts/solve-level.ts",
-    "generate-level": "tsx scripts/generate-level-from-groove.ts"
+    "generate-level": "tsx scripts/generate-level-from-groove.ts",
+    "generate-level-paths": "tsx scripts/generate-level-from-paths.ts"
   },
   "dependencies": {
     "browserslist": "^4.28.2",

@@ -44,10 +44,11 @@ type SceneState = {
 
 type CameraDragMode = "pan" | "rotate";
 
+const pathPalette = ["#ffaf45", "#58c4dd", "#ffc857", "#ff7f7f", "#b291ff", "#7bd389"];
+export const RESERVE_MARGIN = 8;
+
 export class ThreeScene {
   private static modelTemplateCache = new Map<string, Promise<THREE.Object3D>>();
-
-  private readonly reserveInset = 2;
 
   private loadVersion = 0;
 
@@ -247,10 +248,10 @@ export class ThreeScene {
 
     const x = Math.floor(hitPoint.x + 0.5);
     const y = Math.floor(hitPoint.z + 0.5);
-    const minX = includeReserve ? -this.reserveInset : 0;
-    const maxX = includeReserve ? level.board.width + this.reserveInset - 1 : level.board.width - 1;
-    const minY = includeReserve ? -this.reserveInset : 0;
-    const maxY = includeReserve ? level.board.height + this.reserveInset - 1 : level.board.height - 1;
+    const minX = includeReserve ? -RESERVE_MARGIN : 0;
+    const maxX = includeReserve ? level.board.width + RESERVE_MARGIN - 1 : level.board.width - 1;
+    const minY = includeReserve ? -RESERVE_MARGIN : 0;
+    const maxY = includeReserve ? level.board.height + RESERVE_MARGIN - 1 : level.board.height - 1;
     if (x < minX || x > maxX || y < minY || y > maxY) {
       return undefined;
     }
@@ -362,8 +363,8 @@ export class ThreeScene {
 
   /** Creates or updates the board meshes and grids for the active level. */
   private configureBoard(level: LevelDefinition) {
-    const reserveWidth = level.board.width + this.reserveInset * 2;
-    const reserveHeight = level.board.height + this.reserveInset * 2;
+    const reserveWidth = level.board.width + RESERVE_MARGIN * 2;
+    const reserveHeight = level.board.height + RESERVE_MARGIN * 2;
 
     if (!this.state.reserveMesh) {
       this.state.reserveMesh = new THREE.Mesh(
@@ -398,15 +399,8 @@ export class ThreeScene {
       "#6fa4a8",
       0.95,
     );
-    this.state.reserveGrid = this.replaceGrid(
-      this.state.reserveGrid,
-      -this.reserveInset - 0.5,
-      level.board.width + this.reserveInset - 0.5,
-      -this.reserveInset - 0.5,
-      level.board.height + this.reserveInset - 0.5,
-      "#465e63",
-      0.45,
-    );
+    this.removeObject(this.state.reserveGrid);
+    this.state.reserveGrid = undefined;
   }
 
   /** Fits the orbit target and distance to the active board while keeping motion bounded. */
@@ -477,13 +471,26 @@ export class ThreeScene {
 
   /** Draws debug path lines for every animal loop. */
   private addPaths(level: LevelDefinition) {
-    for (const animal of level.animals) {
-      const points = animal.path.waypoints.map((point) => new THREE.Vector3(point.x, 0.08, point.y));
-      points.push(new THREE.Vector3(animal.path.waypoints[0].x, 0.08, animal.path.waypoints[0].y));
+    for (let index = 0; index < level.animals.length; index += 1) {
+      const animal = level.animals[index];
+      const color = pathPalette[index % pathPalette.length];
+      const offsetStrength = ((index % 5) - 2) * 0.06;
+      const points = animal.path.waypoints.map((point, pointIndex, waypoints) => {
+        const offset = computePathOffset(waypoints, pointIndex, offsetStrength);
+        return new THREE.Vector3(point.x + offset.x, 0.08 + index * 0.003, point.y + offset.y);
+      });
+      const firstOffset = computePathOffset(animal.path.waypoints, 0, offsetStrength);
+      points.push(
+        new THREE.Vector3(
+          animal.path.waypoints[0].x + firstOffset.x,
+          0.08 + index * 0.003,
+          animal.path.waypoints[0].y + firstOffset.y,
+        ),
+      );
       const geometry = new THREE.BufferGeometry().setFromPoints(points);
       const line = new THREE.Line(
         geometry,
-        new THREE.LineBasicMaterial({ color: animal.timbre === "kick" ? "#ffb347" : "#7fd1b9" }),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }),
       );
       this.state.pathLines.push(line);
       this.scene.add(line);
@@ -499,9 +506,10 @@ export class ThreeScene {
 
     for (let index = 0; index < level.animals.length; index += 1) {
       const animal = level.animals[index];
+      const fallbackColor = pathPalette[index % pathPalette.length];
       const fallback = new THREE.Mesh(
         new THREE.SphereGeometry(0.25, 16, 16),
-        new THREE.MeshStandardMaterial({ color: animal.timbre === "kick" ? "#ffb347" : "#7fd1b9" }),
+        new THREE.MeshStandardMaterial({ color: fallbackColor }),
       );
       fallback.position.set(0, 0.3, 0);
       this.state.animalFallbacks.set(animal.id, fallback);
@@ -863,6 +871,23 @@ function drawDummyInstrumentIcon(context: CanvasRenderingContext2D, timbre: stri
       context.fillText(timbre[0]?.toUpperCase() ?? "?", 64, 64);
       break;
   }
+}
+
+/** Computes a small lateral offset so overlapping debug paths remain visually separable. */
+function computePathOffset(waypoints: { x: number; y: number }[], index: number, strength: number) {
+  const current = waypoints[index];
+  const previous = waypoints[(index - 1 + waypoints.length) % waypoints.length];
+  const next = waypoints[(index + 1) % waypoints.length];
+  const tangent = new THREE.Vector2(next.x - previous.x, next.y - previous.y);
+  if (tangent.lengthSq() < 1e-6) {
+    return { x: 0, y: 0 };
+  }
+
+  tangent.normalize();
+  return {
+    x: -tangent.y * strength,
+    y: tangent.x * strength,
+  };
 }
 
 /** Samples an animal's closed-loop position and jump height at a beat. */

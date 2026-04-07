@@ -167,22 +167,13 @@ export function buildTriggerEvents(level: LevelDefinition, placements: Placement
   for (const animal of sortedAnimals) {
     const profile = getAnimalProfile(animal.animalType);
     const visits = sampleAnimalPathVisits(animal, level.loopBeats);
-    let previousPlacementInstanceId: string | undefined;
     for (const visit of visits) {
       const key = `${visit.cell.x},${visit.cell.y}`;
       const hit = validation.occupied.get(key);
-      const currentPlacementInstanceId = hit ? placementInstanceKey(hit.placement) : undefined;
 
       if (!hit) {
-        previousPlacementInstanceId = undefined;
         continue;
       }
-
-      if (currentPlacementInstanceId === previousPlacementInstanceId) {
-        continue;
-      }
-
-      previousPlacementInstanceId = currentPlacementInstanceId;
 
       triggers.push({
         id: `${animal.id}-${hit.placement.blockId}-${visit.beat.toFixed(3)}-${visit.cell.x}-${visit.cell.y}`,
