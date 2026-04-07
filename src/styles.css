@@ -33,6 +33,17 @@ select {
     pointer-events: none;
 }
 
+.hud-cluster {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    right: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
 .overlay-panel {
     position: absolute;
     border: 1px solid rgba(127, 209, 185, 0.22);
@@ -45,9 +56,9 @@ select {
 }
 
 .hud-panel {
-    top: 18px;
-    left: 18px;
-    right: 18px;
+    position: relative;
+    inset: auto;
+    pointer-events: auto;
 }
 
 .hud-row {
@@ -63,6 +74,7 @@ select {
 
 .hud-timeline-row {
     margin-top: 8px;
+    align-items: stretch;
 }
 
 .hud-group {
@@ -236,44 +248,95 @@ button {
     overflow: hidden;
 }
 
-.hud-timeline {
-    position: relative;
+.hud-timeline-multilane {
     flex: 1;
-    min-width: 220px;
-    height: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 8px 6px 6px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.hud-lane {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+}
+
+.hud-lane-label {
+    min-width: 14px;
+    font-size: 11px;
+    opacity: 0.75;
+}
+
+.hud-lane-plot {
+    flex: 1;
+    width: 100%;
+    height: 24px;
+}
+
+.hud-lane-baseline {
+    stroke: rgba(255, 255, 255, 0.1);
+    stroke-width: 1;
+}
+
+.hud-lane-produced {
+    fill: none;
+    stroke: rgba(141, 214, 194, 0.85);
+    stroke-width: 1.8;
+}
+
+.hud-lane-reference {
+    fill: rgba(112, 154, 145, 0.36);
+    stroke: none;
+}
+
+.hud-lane-cursor {
+    stroke: rgba(246, 225, 167, 0.85);
+    stroke-width: 1.2;
+}
+
+.hud-gauge-row {
+    display: flex;
+    justify-content: flex-end;
+    pointer-events: none;
+}
+
+.hud-match-gauge {
+    width: 38px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    pointer-events: none;
+}
+
+.hud-match-value {
+    font-size: 12px;
+    line-height: 1;
+    color: rgba(248, 241, 216, 0.9);
+    font-variant-numeric: tabular-nums;
+}
+
+.hud-match-track {
+    position: relative;
+    width: 10px;
+    height: 86px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.08);
     overflow: hidden;
 }
 
-.timeline-note,
-.timeline-cursor {
+.hud-match-fill {
     position: absolute;
-    top: 0;
-    transform: translateX(-50%);
-}
-
-.timeline-note {
-    width: 10px;
-    height: 100%;
-}
-
-.timeline-note.pending {
-    background: rgba(255, 255, 255, 0.18);
-}
-
-.timeline-note.matched {
-    background: #7fd1b9;
-}
-
-.timeline-note.missed {
-    background: #ff8f66;
-}
-
-.timeline-cursor {
-    width: 2px;
-    height: 100%;
-    background: #ffe08f;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(245, 175, 89, 0.85) 0%, rgba(127, 209, 185, 0.88) 100%);
 }
 
 .debug-grid {
