@@ -33,6 +33,11 @@
 ## Dev Notes
 - Avoid long-running `npm run dev` from the agent unless explicitly needed.
 - Prefer terminating checks: `tsc -b`, `vitest run`, `vite build`.
+- CI parity rule: after any code change, run local validation using the same build gate as GitHub Actions (`npm run build`, i.e. `tsc -b && vite build`) before finalizing.
+- For this Windows environment, prefer cached local-tool equivalents for the same CI gate:
+- `npm.cmd exec --cache .npm-cache tsc -b`
+- `npm.cmd exec --cache .npm-cache vite build`
+- If either command fails, treat the change as not ready for push.
 - In this repo, the reliable commands are:
 - `npm.cmd exec --cache .npm-cache tsc -b`
 - `npm.cmd exec --cache .npm-cache vitest run`

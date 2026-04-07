@@ -117,22 +117,22 @@ export function sampleAnimalPathVisits(
   const speed = Math.max(getAnimalProfile(animal.animalType).speed, 0.0001);
   const visits: PathVisit[] = [];
   const seen = new Set<string>();
-  const limit = includeTerminalLoop ? loopBeats + 1e-6 : loopBeats + 1e-6;
+  const epsilon = includeTerminalLoop ? 1e-3 : 1e-6;
+  const limit = loopBeats + epsilon;
+  const cycleBeats = metrics.totalLength / speed;
+  if (cycleBeats <= 0) {
+    return [];
+  }
 
   for (let index = 0; index < waypoints.length; index += 1) {
     const waypointDistance = metrics.cumulativeLengths[index];
-    const cycleBeats = metrics.totalLength / speed;
-    if (cycleBeats <= 0) {
-      continue;
-    }
+    const firstBeat = startPhaseBeat + waypointDistance / speed;
+    const minCycle = Math.ceil((0 - firstBeat) / cycleBeats);
+    const maxCycle = Math.floor((limit - firstBeat) / cycleBeats);
 
-    for (let cycle = 0; ; cycle += 1) {
-      const beat = startPhaseBeat + (waypointDistance + cycle * metrics.totalLength) / speed;
-      if (beat > limit) {
-        break;
-      }
-
-      if (beat < -1e-6) {
+    for (let cycle = minCycle; cycle <= maxCycle; cycle += 1) {
+      const beat = firstBeat + cycle * cycleBeats;
+      if (beat < -epsilon || beat > limit) {
         continue;
       }
 
