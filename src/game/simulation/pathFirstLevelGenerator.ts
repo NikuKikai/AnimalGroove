@@ -1,7 +1,7 @@
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { defineLevel } from "../engine/levelDsl";
 import { defaultModelRegistry } from "../engine/modelRegistry";
-import type { AnimalDefinition, LevelDefinition, Placement, PlaceableBlock, RhythmEvent, Vec2 } from "../types";
+import type { AnimalDefinition, LevelDefinition, Placement, PlaceableBlock, Vec2 } from "../types";
 import { evaluatePlacements } from "./judge";
 import { sampleAnimalPathVisits } from "./utils";
 
@@ -813,12 +813,6 @@ function circularDistance(left: number, right: number, loopBeats: number) {
 /** Builds a stable key for one grid cell. */
 function cellKey(cell: Vec2) {
   return `${cell.x},${cell.y}`;
-}
-
-/** Parses a string cell key back into integer coordinates. */
-function parseCellKey(value: string): Vec2 {
-  const [x, y] = value.split(",").map(Number);
-  return { x, y };
 }
 
 /** Creates a deterministic numeric seed from a string payload. */

@@ -875,7 +875,6 @@ function drawDummyInstrumentIcon(context: CanvasRenderingContext2D, timbre: stri
 
 /** Computes a small lateral offset so overlapping debug paths remain visually separable. */
 function computePathOffset(waypoints: { x: number; y: number }[], index: number, strength: number) {
-  const current = waypoints[index];
   const previous = waypoints[(index - 1 + waypoints.length) % waypoints.length];
   const next = waypoints[(index + 1) % waypoints.length];
   const tangent = new THREE.Vector2(next.x - previous.x, next.y - previous.y);

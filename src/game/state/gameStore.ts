@@ -52,8 +52,8 @@ function computeSimulation(level: LevelDefinition, placements: Placement[]) {
 /** Builds a random but solvable test level and returns its generated identifier. */
 function buildRandomLevel(serial: number) {
   const seed = Date.now() + serial * 9973;
-  const loopBeatsOptions = [6, 8];
-  const loopBeats = loopBeatsOptions[seed % loopBeatsOptions.length];
+  const loopBeatsOptions: readonly number[] = [6, 8];
+  const loopBeats = loopBeatsOptions[seed % loopBeatsOptions.length] ?? 8;
   const levelId = `generated-${serial}`;
   const level = generateLevelFromPaths(levelId, {
     seed,
