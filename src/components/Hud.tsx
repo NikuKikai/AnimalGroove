@@ -191,15 +191,27 @@ function buildPulseAreaPath<T extends RhythmEvent | TriggerEvent>(
 ) {
   const baseline = viewHeight - 1;
   const pulseBeatWidth = Math.max(0.08, loopBeats * 0.018);
-  const sorted = [...events].sort((left, right) => left.beat - right.beat);
-  let path = `M 0 ${baseline}`;
-
-  for (const event of sorted) {
+  const segments: Array<{ leftBeat: number; rightBeat: number; amplitude: number }> = [];
+  for (const event of events) {
     const amplitudeRaw = valueKey === "velocity" ? (event as RhythmEvent).velocity ?? 1 : (event as TriggerEvent).weight;
     const amplitude = Math.max(0.15, Math.min(1, amplitudeRaw / normalizer));
+    const wrapped = buildWrappedPulseSegments(event.beat, pulseBeatWidth * 0.5, loopBeats);
+    for (const segment of wrapped) {
+      segments.push({
+        leftBeat: segment.leftBeat,
+        rightBeat: segment.rightBeat,
+        amplitude,
+      });
+    }
+  }
+  const sorted = segments.sort((left, right) => left.leftBeat - right.leftBeat);
+  let path = `M 0 ${baseline}`;
+
+  for (const segment of sorted) {
+    const amplitude = segment.amplitude;
     const topY = baseline - amplitude * (viewHeight - 7);
-    const leftBeat = Math.max(0, event.beat - pulseBeatWidth * 0.5);
-    const rightBeat = Math.min(loopBeats, event.beat + pulseBeatWidth * 0.5);
+    const leftBeat = segment.leftBeat;
+    const rightBeat = segment.rightBeat;
     const leftX = (leftBeat / loopBeats) * viewWidth;
     const rightX = (rightBeat / loopBeats) * viewWidth;
     path += ` L ${leftX.toFixed(2)} ${baseline} L ${leftX.toFixed(2)} ${topY.toFixed(2)} L ${rightX.toFixed(2)} ${topY.toFixed(2)} L ${rightX.toFixed(2)} ${baseline}`;
@@ -220,15 +232,27 @@ function buildPulseLinePath<T extends RhythmEvent | TriggerEvent>(
 ) {
   const baseline = viewHeight - 1;
   const pulseBeatWidth = Math.max(0.08, loopBeats * 0.018);
-  const sorted = [...events].sort((left, right) => left.beat - right.beat);
-  let path = `M 0 ${baseline}`;
-
-  for (const event of sorted) {
+  const segments: Array<{ leftBeat: number; rightBeat: number; amplitude: number }> = [];
+  for (const event of events) {
     const amplitudeRaw = valueKey === "velocity" ? (event as RhythmEvent).velocity ?? 1 : (event as TriggerEvent).weight;
     const amplitude = Math.max(0.15, Math.min(1, amplitudeRaw / normalizer));
+    const wrapped = buildWrappedPulseSegments(event.beat, pulseBeatWidth * 0.5, loopBeats);
+    for (const segment of wrapped) {
+      segments.push({
+        leftBeat: segment.leftBeat,
+        rightBeat: segment.rightBeat,
+        amplitude,
+      });
+    }
+  }
+  const sorted = segments.sort((left, right) => left.leftBeat - right.leftBeat);
+  let path = `M 0 ${baseline}`;
+
+  for (const segment of sorted) {
+    const amplitude = segment.amplitude;
     const topY = baseline - amplitude * (viewHeight - 7);
-    const leftBeat = Math.max(0, event.beat - pulseBeatWidth * 0.5);
-    const rightBeat = Math.min(loopBeats, event.beat + pulseBeatWidth * 0.5);
+    const leftBeat = segment.leftBeat;
+    const rightBeat = segment.rightBeat;
     const leftX = (leftBeat / loopBeats) * viewWidth;
     const rightX = (rightBeat / loopBeats) * viewWidth;
     path += ` L ${leftX.toFixed(2)} ${baseline} L ${leftX.toFixed(2)} ${topY.toFixed(2)} L ${rightX.toFixed(2)} ${topY.toFixed(2)} L ${rightX.toFixed(2)} ${baseline}`;
@@ -290,4 +314,29 @@ function computeCurveMatchPercent(target: RhythmEvent[], produced: TriggerEvent[
 function wrappedBeatDistance(left: number, right: number, loopBeats: number) {
   const raw = Math.abs(left - right) % loopBeats;
   return Math.min(raw, loopBeats - raw);
+}
+
+/** Splits one centered pulse into one or two in-range segments for looping timelines. */
+function buildWrappedPulseSegments(centerBeat: number, halfWidth: number, loopBeats: number) {
+  const left = centerBeat - halfWidth;
+  const right = centerBeat + halfWidth;
+  if (left >= 0 && right <= loopBeats) {
+    return [{ leftBeat: left, rightBeat: right }];
+  }
+
+  if (left < 0) {
+    return [
+      { leftBeat: 0, rightBeat: right },
+      { leftBeat: loopBeats + left, rightBeat: loopBeats },
+    ];
+  }
+
+  if (right > loopBeats) {
+    return [
+      { leftBeat: left, rightBeat: loopBeats },
+      { leftBeat: 0, rightBeat: right - loopBeats },
+    ];
+  }
+
+  return [{ leftBeat: 0, rightBeat: 0 }];
 }
