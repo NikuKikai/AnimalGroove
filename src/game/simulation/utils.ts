@@ -6,6 +6,7 @@ import type {
   TriggerEvent,
   Vec2,
 } from "../types";
+import { getAnimalProfile } from "../engine/animalRegistry";
 
 export type OccupiedCell = {
   placement: Placement;
@@ -107,28 +108,47 @@ export function sampleAnimalPathVisits(
   loopBeats: number,
   includeTerminalLoop = false,
 ): PathVisit[] {
-  const { waypoints, cycleBeats, startPhaseBeat = 0 } = animal.path;
+  const { waypoints, startPhaseBeat = 0 } = animal.path;
   if (waypoints.length === 0) {
     return [];
   }
 
   const metrics = computePathMetrics(waypoints);
+  const speed = Math.max(getAnimalProfile(animal.animalType).speed, 0.0001);
   const visits: PathVisit[] = [];
-  const limit = includeTerminalLoop ? loopBeats + 1e-6 : loopBeats - 1e-6;
+  const seen = new Set<string>();
+  const limit = includeTerminalLoop ? loopBeats + 1e-6 : loopBeats + 1e-6;
 
   for (let index = 0; index < waypoints.length; index += 1) {
-    const distanceFraction =
-      metrics.totalLength === 0 ? index / waypoints.length : metrics.cumulativeLengths[index] / metrics.totalLength;
-    const beat = wrapBeat(startPhaseBeat + distanceFraction * cycleBeats, loopBeats);
-    if (beat >= limit && !includeTerminalLoop) {
+    const waypointDistance = metrics.cumulativeLengths[index];
+    const cycleBeats = metrics.totalLength / speed;
+    if (cycleBeats <= 0) {
       continue;
     }
 
-    visits.push({
-      beat,
-      cell: waypoints[index],
-      animalId: animal.id,
-    });
+    for (let cycle = 0; ; cycle += 1) {
+      const beat = startPhaseBeat + (waypointDistance + cycle * metrics.totalLength) / speed;
+      if (beat > limit) {
+        break;
+      }
+
+      if (beat < -1e-6) {
+        continue;
+      }
+
+      const wrappedBeat = wrapBeat(beat, loopBeats);
+      const visitKey = `${wrappedBeat.toFixed(6)}:${waypoints[index].x},${waypoints[index].y}`;
+      if (seen.has(visitKey)) {
+        continue;
+      }
+
+      seen.add(visitKey);
+      visits.push({
+        beat: wrappedBeat,
+        cell: waypoints[index],
+        animalId: animal.id,
+      });
+    }
   }
 
   return visits.sort((left, right) => left.beat - right.beat);
@@ -145,6 +165,7 @@ export function buildTriggerEvents(level: LevelDefinition, placements: Placement
   const sortedAnimals = [...level.animals].sort((left, right) => left.id.localeCompare(right.id));
 
   for (const animal of sortedAnimals) {
+    const profile = getAnimalProfile(animal.animalType);
     const visits = sampleAnimalPathVisits(animal, level.loopBeats);
     let previousPlacementInstanceId: string | undefined;
     for (const visit of visits) {
@@ -168,6 +189,9 @@ export function buildTriggerEvents(level: LevelDefinition, placements: Placement
         beat: visit.beat,
         timbre: hit.block.timbre,
         animalId: animal.id,
+        animalType: animal.animalType,
+        weight: profile.weight,
+        effect: profile.effect,
         placementId: hit.placement.blockId,
         placementInstanceId: placementInstanceKey(hit.placement),
         cell: visit.cell,

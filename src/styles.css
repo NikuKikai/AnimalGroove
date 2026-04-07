@@ -79,6 +79,7 @@ select {
 
 .hud-level-group {
     min-width: 180px;
+    flex-wrap: wrap;
 }
 
 .hud-button-group {
@@ -282,6 +283,12 @@ button {
 
 .debug-grid {
     grid-template-columns: 1fr auto;
+}
+
+.debug-actions {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .hud-pill {

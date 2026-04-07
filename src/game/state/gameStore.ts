@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ensembleLevel, tutorialLevel } from "../../data/levels";
-import { evaluatePlacements, validatePlacements } from "../simulation";
+import { evaluatePlacements, generateGroove, generateLevelFromGroove, solveLevel, validatePlacements } from "../simulation";
 import type { LevelDefinition, Placement, SimulationResult } from "../types";
 
 export type AudioChannelKey = "hit" | "reference" | "wrong";
@@ -10,6 +10,7 @@ export type AudioMixState = Record<AudioChannelKey, { volume: number; muted: boo
 type GameState = {
   levels: LevelDefinition[];
   activeLevelId: string;
+  generatedLevelId?: string;
   placements: Placement[];
   draggingBlockId?: string;
   draggingRotation: 0 | 90;
@@ -21,6 +22,8 @@ type GameState = {
   simulation: SimulationResult;
   audioMix: AudioMixState;
   setActiveLevel: (levelId: string) => void;
+  createRandomLevel: () => void;
+  applySolution: () => void;
   setCurrentBeat: (beat: number) => void;
   togglePaths: () => void;
   setAudioVolume: (channel: AudioChannelKey, volume: number) => void;
@@ -34,10 +37,10 @@ type GameState = {
   removePlacementAt: (x: number, y: number) => void;
 };
 
-const levels = [tutorialLevel, ensembleLevel];
+const baseLevels = [tutorialLevel, ensembleLevel];
 
 /** Resolves a level id to a concrete level definition. */
-function getLevelById(levelId: string) {
+function getLevelById(levels: LevelDefinition[], levelId: string) {
   return levels.find((level) => level.id === levelId) ?? levels[0];
 }
 
@@ -46,13 +49,66 @@ function computeSimulation(level: LevelDefinition, placements: Placement[]) {
   return evaluatePlacements(level, placements);
 }
 
+/** Builds a random but solvable test level and returns its generated identifier. */
+function buildRandomLevel(serial: number) {
+  const seed = Date.now() + serial * 9973;
+  const loopBeatsOptions = [4, 5, 6, 7, 8];
+  const loopBeats = loopBeatsOptions[seed % loopBeatsOptions.length];
+  const bpm = 96 + (seed % 33);
+  const density = 0.35 + ((seed % 31) / 100);
+  const timbreSets = [
+    ["kick", "snare"],
+    ["kick", "hat"],
+    ["kick", "snare", "hat"],
+  ];
+  const timbres = timbreSets[seed % timbreSets.length];
+  const lanes = timbres.length > 2 ? ["drums", "perc"] : ["drums"];
+
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const rhythm = generateGroove({
+      bpm,
+      loopBeats,
+      density: Math.min(0.8, density + attempt * 0.01),
+      lanes,
+      timbres,
+      seed: seed + attempt * 101,
+    });
+
+    if (rhythm.length < 2) {
+      continue;
+    }
+
+    const levelId = `generated-${serial}`;
+    const level = generateLevelFromGroove(levelId, rhythm);
+    return {
+      ...level,
+      name: `Generated ${serial}`,
+      description: `Random test level ${serial}`,
+      bpm,
+    };
+  }
+
+  const fallbackRhythm = [
+    { id: `fallback-${serial}-0`, lane: "drums", beat: 0, timbre: "kick", velocity: 1 },
+    { id: `fallback-${serial}-1`, lane: "drums", beat: 2, timbre: "snare", velocity: 0.92 },
+    { id: `fallback-${serial}-2`, lane: "drums", beat: 3, timbre: "kick", velocity: 0.85 },
+  ];
+
+  return {
+    ...generateLevelFromGroove(`generated-${serial}`, fallbackRhythm),
+    name: `Generated ${serial}`,
+    description: `Random test level ${serial}`,
+    bpm,
+  };
+}
+
 /** Central Zustand store for game state, placement state, and audio mix controls. */
 export const useGameStore = create<GameState>((set, get) => {
-  const initialLevel = levels[0];
+  const initialLevel = baseLevels[0];
   const initialPlacements: Placement[] = [];
 
   return {
-    levels,
+    levels: baseLevels,
     activeLevelId: initialLevel.id,
     placements: initialPlacements,
     draggingRotation: 0,
@@ -67,7 +123,7 @@ export const useGameStore = create<GameState>((set, get) => {
       wrong: { volume: 0.4, muted: false },
     },
     setActiveLevel: (levelId) => {
-      const nextLevel = getLevelById(levelId);
+      const nextLevel = getLevelById(get().levels, levelId);
       const placements: Placement[] = [];
       set({
         activeLevelId: nextLevel.id,
@@ -77,6 +133,35 @@ export const useGameStore = create<GameState>((set, get) => {
         dragPointer: undefined,
         currentBeat: 0,
         simulation: computeSimulation(nextLevel, placements),
+      });
+    },
+    createRandomLevel: () => {
+      const serial = (get().generatedLevelId ? Number(get().generatedLevelId.split("-").pop()) || 0 : 0) + 1;
+      const nextLevel = buildRandomLevel(serial);
+      const retainedLevels = get().levels.filter((level) => level.id !== get().generatedLevelId);
+      const placements: Placement[] = [];
+
+      set({
+        levels: [...retainedLevels, nextLevel],
+        generatedLevelId: nextLevel.id,
+        activeLevelId: nextLevel.id,
+        placements,
+        draggingBlockId: undefined,
+        draggingRotation: 0,
+        dragPointer: undefined,
+        currentBeat: 0,
+        simulation: computeSimulation(nextLevel, placements),
+      });
+    },
+    applySolution: () => {
+      const level = getLevelById(get().levels, get().activeLevelId);
+      const placements = level.referenceSolution ?? solveLevel(level).placements;
+      set({
+        placements,
+        draggingBlockId: undefined,
+        draggingRotation: 0,
+        dragPointer: undefined,
+        simulation: computeSimulation(level, placements),
       });
     },
     setCurrentBeat: (beat) => set({ currentBeat: beat }),
@@ -126,7 +211,7 @@ export const useGameStore = create<GameState>((set, get) => {
         draggingRotation: 0,
       }),
     resetPlacements: () => {
-      const level = getLevelById(get().activeLevelId);
+      const level = getLevelById(get().levels, get().activeLevelId);
       const placements: Placement[] = [];
       set({
         placements,
@@ -134,7 +219,7 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
     placeBlock: (placement) => {
-      const level = getLevelById(get().activeLevelId);
+      const level = getLevelById(get().levels, get().activeLevelId);
       const placements = [...get().placements, placement];
       const validation = validatePlacements(level, placements);
       if (!validation.valid) {
@@ -146,7 +231,7 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
     removePlacementAt: (x, y) => {
-      const level = getLevelById(get().activeLevelId);
+      const level = getLevelById(get().levels, get().activeLevelId);
       const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
       const placements = get().placements.filter((placement) => {
         const block = blockMap.get(placement.blockId);
@@ -172,6 +257,6 @@ export const useGameStore = create<GameState>((set, get) => {
 });
 
 /** Returns the fully resolved active level from a partial store snapshot. */
-export function getActiveLevel(state: Pick<GameState, "activeLevelId">) {
-  return getLevelById(state.activeLevelId);
+export function getActiveLevel(state: Pick<GameState, "activeLevelId" | "levels">) {
+  return getLevelById(state.levels, state.activeLevelId);
 }

@@ -9,3 +9,9 @@ Recent pitfalls to remember:
 - Pages build failed on npm optional Rollup binaries; keep the workflow and `optionalDependencies` workaround unless deployment tooling changes.
 - CI TypeScript was stricter than local runs. Common fixes were explicit literal typing (`0 | 90`), removing unused store reads, and local declaration files for Three examples modules.
 - Local Windows npm operations can leave `node_modules` half-broken or hold file locks on `esbuild` / `rollup`. Be careful when relying on local install state after interrupted commands.
+
+Current gameplay data rules:
+- Animal species now carry global profile data keyed by `animalType`.
+- The active profile fields are `weight`, `speed`, and `effect`.
+- Runtime movement and trigger timing should be based on cumulative path distance and species speed.
+- `effect` is currently dummy metadata only; keep it stored but do not promise audible behavior yet.

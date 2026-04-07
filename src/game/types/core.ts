@@ -14,7 +14,7 @@ export type RhythmEvent = {
 
 export type AnimalPath = {
   waypoints: Vec2[];
-  cycleBeats: number;
+  cycleBeats?: number;
   startPhaseBeat?: number;
 };
 
@@ -24,6 +24,13 @@ export type AnimalDefinition = {
   animalType: string;
   timbre: string;
   path: AnimalPath;
+};
+
+export type AnimalProfile = {
+  animalType: string;
+  weight: number;
+  speed: number;
+  effect: string;
 };
 
 export type PlaceableBlock = {
@@ -75,6 +82,9 @@ export type TriggerEvent = {
   beat: number;
   timbre: string;
   animalId: string;
+  animalType: string;
+  weight: number;
+  effect: string;
   placementId: string;
   placementInstanceId: string;
   cell: Vec2;

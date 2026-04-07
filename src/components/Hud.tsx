@@ -9,12 +9,13 @@ export function Hud() {
   const audioMix = useGameStore((state) => state.audioMix);
   const simulation = useGameStore((state) => state.simulation);
   const setActiveLevel = useGameStore((state) => state.setActiveLevel);
+  const createRandomLevel = useGameStore((state) => state.createRandomLevel);
   const togglePaths = useGameStore((state) => state.togglePaths);
   const resetPlacements = useGameStore((state) => state.resetPlacements);
   const setAudioVolume = useGameStore((state) => state.setAudioVolume);
   const toggleAudioMute = useGameStore((state) => state.toggleAudioMute);
 
-  const level = getActiveLevel({ activeLevelId });
+  const level = getActiveLevel({ activeLevelId, levels });
 
   return (
     <header className="overlay-panel hud-panel">
@@ -27,6 +28,9 @@ export function Hud() {
               </option>
             ))}
           </select>
+          <button type="button" onClick={createRandomLevel} title="Generate a random test level">
+            Random
+          </button>
         </div>
         <div className="hud-group hud-button-group">
           <button type="button" onClick={resetPlacements}>

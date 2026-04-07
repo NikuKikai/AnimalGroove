@@ -9,6 +9,7 @@ Players drag percussion blocks onto a grid-based field. Animals move along loopi
 - Fullscreen Three.js board with floating HUD
 - Scene-native drag and drop block placement
 - Closed-loop jumping animal motion
+- Global animal profiles with per-species weight, movement speed, and placeholder effect tags
 - Per-note rhythm judging
 - Separate hit / reference / wrong audio channels
 - Example levels and offline simulation tools
@@ -20,6 +21,19 @@ Players drag percussion blocks onto a grid-based field. Animals move along loopi
 - Drag placed blocks to move them
 - Press `R` while dragging to rotate
 - Right click a placed block to remove it
+- Drag empty space to pan the camera
+- Right drag empty space to orbit the camera
+- Use the mouse wheel to zoom
+
+## Animal Profiles
+
+Animal species now have global, non-level-specific runtime properties:
+
+- `weight`: scales the trigger loudness when that animal steps on a block
+- `speed`: determines timing from actual path distance, not from waypoint count
+- `effect`: reserved for future per-species sound coloration
+
+Current runtime behavior uses `weight` and `speed`. `effect` is stored as data only for now.
 
 ## Development
 

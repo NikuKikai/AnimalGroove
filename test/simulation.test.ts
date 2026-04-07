@@ -18,11 +18,28 @@ describe("simulation", () => {
   it("generated level stays solvable from groove", () => {
     const rhythm: RhythmEvent[] = [
       { id: "a", lane: "drums", beat: 0, timbre: "kick" },
-      { id: "b", lane: "drums", beat: 2, timbre: "snare" },
+      { id: "b", lane: "drums", beat: 2, timbre: "kick" },
+      { id: "c", lane: "drums", beat: 1, timbre: "snare" },
+      { id: "d", lane: "drums", beat: 3, timbre: "snare" },
+      { id: "e", lane: "perc", beat: 0.5, timbre: "hat" },
     ];
     const level = generateLevelFromGroove("test", rhythm);
     const result = solveLevel(level);
+    const pathCellUsage = new Map<string, number>();
+
+    for (const animal of level.animals) {
+      for (const point of animal.path.waypoints) {
+        const key = `${point.x},${point.y}`;
+        pathCellUsage.set(key, (pathCellUsage.get(key) ?? 0) + 1);
+      }
+    }
+
     expect(result.solvable).toBe(true);
+    expect(level.referenceSolution).toBeDefined();
+    expect(evaluatePlacements(level, level.referenceSolution ?? []).solved).toBe(true);
+    expect(level.animals.every((animal) => animal.path.waypoints.length >= 3)).toBe(true);
+    expect(level.animals.some((animal) => animal.path.waypoints.length > level.loopBeats)).toBe(true);
+    expect([...pathCellUsage.values()].some((count) => count > 1)).toBe(true);
   });
 
   it("ensemble level reports simulation output", () => {

@@ -3,9 +3,10 @@ import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 /** Renders a standalone target timeline panel for debugging and tuning. */
 export function Timeline() {
   const activeLevelId = useGameStore((state) => state.activeLevelId);
+  const levels = useGameStore((state) => state.levels);
   const currentBeat = useGameStore((state) => state.currentBeat);
   const simulation = useGameStore((state) => state.simulation);
-  const level = getActiveLevel({ activeLevelId });
+  const level = getActiveLevel({ activeLevelId, levels });
 
   return (
     <section className="overlay-panel timeline-panel">

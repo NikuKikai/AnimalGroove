@@ -61,7 +61,7 @@ export class AudioEngine {
         matched ? "hit" : "wrong",
         mapTimbreToPitch(trigger.timbre),
         this.nextTime(),
-        matched ? 0.95 : 0.5,
+        (matched ? 0.95 : 0.5) * trigger.weight,
       );
     } catch {
       return;
@@ -78,7 +78,7 @@ export class AudioEngine {
 
     const node = this.channelNodes[style];
     node.gain.gain.value = mixState.volume;
-    node.synth.triggerAttackRelease(pitch, getDuration(style), time, velocity);
+    node.synth.triggerAttackRelease(pitch, getDuration(style), time, Math.min(1.8, Math.max(0.05, velocity)));
   }
 
   /** Creates reusable synth, filter, and gain nodes for each audio channel. */

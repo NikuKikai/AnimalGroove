@@ -19,13 +19,23 @@ type DragSession =
   | { source: "stash" }
   | { source: "board"; originalPlacement: Placement };
 
+type CameraSession = {
+  mode: "pan" | "rotate";
+};
+
 /** Hosts the Three.js scene and coordinates runtime input, loading, and audio playback. */
 export function BoardView() {
   const mountRef = useRef<HTMLDivElement>(null);
   const transportRef = useRef<Transport | null>(null);
   const sceneRef = useRef<ThreeScene | null>(null);
-  const levelRef = useRef(getActiveLevel({ activeLevelId: useGameStore.getState().activeLevelId }));
+  const levelRef = useRef(
+    getActiveLevel({
+      activeLevelId: useGameStore.getState().activeLevelId,
+      levels: useGameStore.getState().levels,
+    }),
+  );
   const dragSessionRef = useRef<DragSession | null>(null);
+  const cameraSessionRef = useRef<CameraSession | null>(null);
   const previewRef = useRef<PreviewPlacement | undefined>(undefined);
   const lastBeatRef = useRef(0);
   const audioReadyRef = useRef(false);
@@ -54,7 +64,7 @@ export function BoardView() {
   const updateDragPointer = useGameStore((state) => state.updateDragPointer);
   const rotateDrag = useGameStore((state) => state.rotateDrag);
   const endDrag = useGameStore((state) => state.endDrag);
-  const level = getActiveLevel({ activeLevelId });
+  const level = getActiveLevel({ activeLevelId, levels });
 
   useEffect(() => {
     levelRef.current = level;
@@ -113,8 +123,22 @@ export function BoardView() {
 
     const handlePointerDown = async (event: PointerEvent) => {
       await unlockAudio();
+      if (event.button !== 0 && event.button !== 2) {
+        return;
+      }
+
       const hit = scene.pickSceneObject(event.clientX, event.clientY);
       if (!hit) {
+        const mode = event.button === 2 ? "rotate" : "pan";
+        cameraSessionRef.current = { mode };
+        scene.beginCameraDrag(mode, event.clientX, event.clientY);
+        return;
+      }
+
+      if (event.button === 2) {
+        const mode = "rotate";
+        cameraSessionRef.current = { mode };
+        scene.beginCameraDrag(mode, event.clientX, event.clientY);
         return;
       }
 
@@ -135,6 +159,9 @@ export function BoardView() {
     const handlePointerMove = (event: PointerEvent) => {
       const state = useGameStore.getState();
       if (!state.draggingBlockId) {
+        if (cameraSessionRef.current) {
+          scene.updateCameraDrag(event.clientX, event.clientY);
+        }
         return;
       }
 
@@ -171,6 +198,11 @@ export function BoardView() {
 
     const handlePointerUp = () => {
       const state = useGameStore.getState();
+      if (cameraSessionRef.current) {
+        cameraSessionRef.current = null;
+        scene.endCameraDrag();
+      }
+
       if (!state.draggingBlockId) {
         return;
       }
@@ -190,11 +222,19 @@ export function BoardView() {
 
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
+      if (cameraSessionRef.current?.mode === "rotate") {
+        return;
+      }
       const activeLevel = levelRef.current;
       const cell = scene.getCellFromPointer(event.clientX, event.clientY, activeLevel);
       if (cell) {
         removePlacementAt(cell.x, cell.y);
       }
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      scene.zoomCamera(event.deltaY);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -239,6 +279,7 @@ export function BoardView() {
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
     dom.addEventListener("contextmenu", handleContextMenu);
+    dom.addEventListener("wheel", handleWheel, { passive: false });
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("resize", handleResize);
 
@@ -251,6 +292,7 @@ export function BoardView() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       dom.removeEventListener("contextmenu", handleContextMenu);
+      dom.removeEventListener("wheel", handleWheel);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("resize", handleResize);
       transport.dispose();

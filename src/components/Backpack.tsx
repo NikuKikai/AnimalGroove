@@ -4,9 +4,10 @@ import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 /** Renders the legacy DOM backpack view for block inventory testing. */
 export function Backpack() {
   const activeLevelId = useGameStore((state) => state.activeLevelId);
+  const levels = useGameStore((state) => state.levels);
   const placements = useGameStore((state) => state.placements);
   const startDrag = useGameStore((state) => state.startDrag);
-  const level = getActiveLevel({ activeLevelId });
+  const level = getActiveLevel({ activeLevelId, levels });
 
   const loosePieces = useMemo(() => {
     const usage = new Map<string, number>();

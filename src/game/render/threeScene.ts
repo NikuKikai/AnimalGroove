@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { getAnimalProfile } from "../engine/animalRegistry";
 import type { LevelDefinition, Placement } from "../types";
 import { computePathMetrics, placementInstanceKey } from "../simulation";
 
@@ -41,6 +42,8 @@ type SceneState = {
   iconTextureCache: Map<string, THREE.Texture>;
 };
 
+type CameraDragMode = "pan" | "rotate";
+
 export class ThreeScene {
   private static modelTemplateCache = new Map<string, Promise<THREE.Object3D>>();
 
@@ -60,6 +63,20 @@ export class ThreeScene {
 
   private boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
+  private orbitTarget = new THREE.Vector3(3.5, 0, 2.5);
+
+  private orbitYaw = Math.PI / 4;
+
+  private orbitPitch = 0.82;
+
+  private orbitDistance = 13.5;
+
+  private activeCameraDrag?: {
+    mode: CameraDragMode;
+    pointerX: number;
+    pointerY: number;
+  };
+
   private mountedElement?: HTMLDivElement;
 
   private state: SceneState = {
@@ -75,8 +92,7 @@ export class ThreeScene {
   constructor() {
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.scene.background = new THREE.Color("#0f1718");
-    this.camera.position.set(6, 10, 10);
-    this.camera.lookAt(4, 0, 3);
+    this.updateCamera();
 
     const ambientLight = new THREE.AmbientLight("#f3f0d6", 1.25);
     const directionalLight = new THREE.DirectionalLight("#ffffff", 1.6);
@@ -115,6 +131,59 @@ export class ThreeScene {
     return this.renderer.domElement;
   }
 
+  /** Starts a camera drag gesture for panning or orbit rotation. */
+  beginCameraDrag(mode: CameraDragMode, clientX: number, clientY: number) {
+    this.activeCameraDrag = {
+      mode,
+      pointerX: clientX,
+      pointerY: clientY,
+    };
+  }
+
+  /** Updates the active camera drag gesture and applies constrained motion. */
+  updateCameraDrag(clientX: number, clientY: number) {
+    if (!this.activeCameraDrag || !this.mountedElement) {
+      return;
+    }
+
+    const deltaX = clientX - this.activeCameraDrag.pointerX;
+    const deltaY = clientY - this.activeCameraDrag.pointerY;
+    this.activeCameraDrag.pointerX = clientX;
+    this.activeCameraDrag.pointerY = clientY;
+
+    if (this.activeCameraDrag.mode === "rotate") {
+      this.orbitYaw += deltaX * 0.0035;
+      this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch - deltaY * 0.003, 0.35, 1.22);
+      this.updateCamera();
+      return;
+    }
+
+    const panScale = this.orbitDistance * 0.00115;
+    const forward = new THREE.Vector3(
+      this.camera.position.x - this.orbitTarget.x,
+      0,
+      this.camera.position.z - this.orbitTarget.z,
+    ).normalize();
+    const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), forward).normalize();
+    const flatForward = new THREE.Vector3().crossVectors(right, new THREE.Vector3(0, 1, 0)).normalize();
+    this.orbitTarget.addScaledVector(right, -deltaX * panScale);
+    this.orbitTarget.addScaledVector(flatForward, -deltaY * panScale);
+    this.clampCameraTarget();
+    this.updateCamera();
+  }
+
+  /** Ends any active camera drag gesture. */
+  endCameraDrag() {
+    this.activeCameraDrag = undefined;
+  }
+
+  /** Zooms the camera in or out while keeping distance and target inside limits. */
+  zoomCamera(deltaY: number) {
+    const zoomFactor = Math.exp(deltaY * 0.0012);
+    this.orbitDistance = THREE.MathUtils.clamp(this.orbitDistance * zoomFactor, 6.5, 28);
+    this.updateCamera();
+  }
+
   /** Resizes the renderer and camera to match the mounted element. */
   resize() {
     if (!this.mountedElement) {
@@ -132,6 +201,7 @@ export class ThreeScene {
     const version = ++this.loadVersion;
     this.clearDynamicLevel();
     this.configureBoard(level);
+    this.fitCameraToBoard(level);
     onProgress?.(0.2);
     this.addPaths(level);
     onProgress?.(0.35);
@@ -233,6 +303,7 @@ export class ThreeScene {
 
   /** Releases scene resources and detaches the canvas. */
   dispose() {
+    this.activeCameraDrag = undefined;
     this.clearLevel();
     this.renderer.dispose();
     if (this.mountedElement?.contains(this.renderer.domElement)) {
@@ -338,6 +409,35 @@ export class ThreeScene {
     );
   }
 
+  /** Fits the orbit target and distance to the active board while keeping motion bounded. */
+  private fitCameraToBoard(level: LevelDefinition) {
+    this.orbitTarget.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
+    this.orbitDistance = THREE.MathUtils.clamp(Math.max(level.board.width, level.board.height) * 1.7, 8, 26);
+    this.clampCameraTarget(level);
+    this.updateCamera();
+  }
+
+  /** Keeps the camera target inside a padded rectangle around the board. */
+  private clampCameraTarget(level?: LevelDefinition) {
+    const boardWidth = level?.board.width ?? (this.state.boardMesh ? Math.round((this.state.boardMesh.geometry as THREE.BoxGeometry).parameters.width) : 8);
+    const boardHeight = level?.board.height ?? (this.state.boardMesh ? Math.round((this.state.boardMesh.geometry as THREE.BoxGeometry).parameters.depth) : 8);
+    const padding = 3.5;
+    this.orbitTarget.x = THREE.MathUtils.clamp(this.orbitTarget.x, -padding, boardWidth - 1 + padding);
+    this.orbitTarget.z = THREE.MathUtils.clamp(this.orbitTarget.z, -padding, boardHeight - 1 + padding);
+  }
+
+  /** Recomputes the camera transform from the current orbit state. */
+  private updateCamera() {
+    const sinPitch = Math.sin(this.orbitPitch);
+    const cosPitch = Math.cos(this.orbitPitch);
+    this.camera.position.set(
+      this.orbitTarget.x + Math.cos(this.orbitYaw) * sinPitch * this.orbitDistance,
+      this.orbitTarget.y + cosPitch * this.orbitDistance,
+      this.orbitTarget.z + Math.sin(this.orbitYaw) * sinPitch * this.orbitDistance,
+    );
+    this.camera.lookAt(this.orbitTarget);
+  }
+
   /** Creates or updates a line grid mesh for the given rectangular bounds. */
   private replaceGrid(
     existing: THREE.LineSegments | undefined,
@@ -438,13 +538,13 @@ export class ThreeScene {
     for (const animal of level.animals) {
       const point = sampleAnimalPosition(
         animal.path.waypoints,
-        animal.path.cycleBeats,
+        getAnimalProfile(animal.animalType).speed,
         beat,
         animal.path.startPhaseBeat ?? 0,
       );
       const nextPoint = sampleAnimalPosition(
         animal.path.waypoints,
-        animal.path.cycleBeats,
+        getAnimalProfile(animal.animalType).speed,
         beat + 0.05,
         animal.path.startPhaseBeat ?? 0,
       );
@@ -768,17 +868,20 @@ function drawDummyInstrumentIcon(context: CanvasRenderingContext2D, timbre: stri
 /** Samples an animal's closed-loop position and jump height at a beat. */
 function sampleAnimalPosition(
   waypoints: { x: number; y: number }[],
-  cycleBeats: number,
+  speed: number,
   beat: number,
   startPhaseBeat: number,
 ) {
-  const relativeBeat = (((beat - startPhaseBeat) % cycleBeats) + cycleBeats) % cycleBeats;
   const metrics = computePathMetrics(waypoints);
   if (metrics.totalLength === 0) {
     return { ...waypoints[0], jumpHeight: 0 };
   }
 
-  const targetDistance = (relativeBeat / cycleBeats) * metrics.totalLength;
+  const safeSpeed = Math.max(speed, 0.0001);
+  const cycleBeats = metrics.totalLength / safeSpeed;
+  const relativeBeat = cycleBeats <= 0 ? 0 : (((beat - startPhaseBeat) % cycleBeats) + cycleBeats) % cycleBeats;
+  const traveledDistance = relativeBeat * safeSpeed;
+  const targetDistance = ((traveledDistance % metrics.totalLength) + metrics.totalLength) % metrics.totalLength;
   let segmentIndex = 0;
   for (let index = 0; index < metrics.segmentLengths.length; index += 1) {
     if (targetDistance <= metrics.cumulativeLengths[index + 1]) {

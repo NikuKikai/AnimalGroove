@@ -5,6 +5,7 @@ import { useGameStore } from "../game/state/gameStore";
 export function DebugPanel() {
   const simulation = useGameStore((state) => state.simulation);
   const placements = useGameStore((state) => state.placements);
+  const applySolution = useGameStore((state) => state.applySolution);
   const summary = useMemo(
     () => ({
       matched: simulation.targetNotes.filter((note) => note.state === "matched").length,
@@ -27,6 +28,11 @@ export function DebugPanel() {
         <span>{summary.missed}</span>
         <span>Extra</span>
         <span>{summary.extra}</span>
+      </div>
+      <div className="debug-actions">
+        <button type="button" onClick={applySolution}>
+          Show Solution
+        </button>
       </div>
     </section>
   );
