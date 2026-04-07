@@ -104,7 +104,10 @@ export const useGameStore = create<GameState>((set, get) => {
       });
     },
     createRandomLevel: () => {
-      const serial = (get().generatedLevelId ? Number(get().generatedLevelId.split("-").pop()) || 0 : 0) + 1;
+      const generatedLevelId = get().generatedLevelId;
+      const previousSerialMatch = generatedLevelId?.match(/(\d+)$/);
+      const previousSerial = previousSerialMatch ? Number(previousSerialMatch[1]) || 0 : 0;
+      const serial = previousSerial + 1;
       const nextLevel = buildRandomLevel(serial);
       const retainedLevels = get().levels.filter((level) => level.id !== get().generatedLevelId);
       const placements: Placement[] = [];
