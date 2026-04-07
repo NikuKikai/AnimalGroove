@@ -1,7 +1,7 @@
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { defineLevel } from "../engine/levelDsl";
 import { defaultModelRegistry } from "../engine/modelRegistry";
-import type { AnimalDefinition, LevelDefinition, Placement, RhythmEvent, Vec2 } from "../types";
+import type { AnimalDefinition, LevelDefinition, Placement, PlaceableBlock, RhythmEvent, Vec2 } from "../types";
 
 const generatedAnimalTypes = ["fox", "dog", "bee", "tiger", "parrot", "bunny"];
 const palette = ["#ffaf45", "#58c4dd", "#ffc857", "#b8e986", "#ff7f7f", "#b291ff"];
@@ -139,7 +139,7 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
     color: palette[index % palette.length],
   }));
 
-  const normalized = normalizeGeneratedLayout(animals, [...placementMap.values()], 2);
+  const normalized = normalizeGeneratedLayout(animals, [...placementMap.values()], inventory);
 
   return defineLevel({
     id,
@@ -306,22 +306,54 @@ function buildRectangleLoop(origin: Vec2, spanX: number, spanY: number) {
   return points;
 }
 
-/** Packs generated geometry into a tight positive board rectangle with configurable padding. */
-function normalizeGeneratedLayout(animals: AnimalDefinition[], placements: Placement[], padding: number) {
+/** Packs generated geometry into the smallest positive board rectangle that still contains routes and solved blocks. */
+function normalizeGeneratedLayout(animals: AnimalDefinition[], placements: Placement[], inventory: PlaceableBlock[]) {
   // Everything is generated around the origin for convenience. Before returning the level,
-  // translate the whole layout into positive board space and shrink the board to the true bounds.
-  const allPoints = animals.flatMap((animal) => animal.path.waypoints).concat(placements.map((placement) => placement.origin));
-  const minX = Math.min(...allPoints.map((point) => point.x));
-  const maxX = Math.max(...allPoints.map((point) => point.x));
-  const minY = Math.min(...allPoints.map((point) => point.y));
-  const maxY = Math.max(...allPoints.map((point) => point.y));
-  const shiftX = padding - minX;
-  const shiftY = padding - minY;
+  // translate the whole layout into positive board space and shrink the board to true occupied bounds.
+  const inventoryById = new Map(inventory.map((block) => [block.id, block]));
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const animal of animals) {
+    for (const point of animal.path.waypoints) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+  }
+
+  for (const placement of placements) {
+    const block = inventoryById.get(placement.blockId);
+    if (!block) {
+      continue;
+    }
+
+    const width = placement.rotation === 90 ? block.height : block.width;
+    const height = placement.rotation === 90 ? block.width : block.height;
+    minX = Math.min(minX, placement.origin.x);
+    minY = Math.min(minY, placement.origin.y);
+    maxX = Math.max(maxX, placement.origin.x + width - 1);
+    maxY = Math.max(maxY, placement.origin.y + height - 1);
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return {
+      board: { width: 1, height: 1 },
+      animals,
+      placements,
+    };
+  }
+
+  const shiftX = -minX;
+  const shiftY = -minY;
 
   return {
     board: {
-      width: maxX - minX + padding * 2 + 1,
-      height: maxY - minY + padding * 2 + 1,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
     },
     animals: animals.map((animal) => ({
       ...animal,
