@@ -55,7 +55,7 @@ export class ThreeScene {
 
   private orbitTarget = new THREE.Vector3(3.5, 0, 2.5);
 
-  private orbitYaw = Math.PI / 4;
+  private orbitYaw = Math.PI / 2;
 
   private orbitPitch = 0.82;
 

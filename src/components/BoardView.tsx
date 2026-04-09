@@ -23,6 +23,11 @@ type CameraSession = {
   mode: "pan" | "rotate";
 };
 
+type DragOccupancyState = {
+  stashPieceId?: string;
+  boardPlacement?: Placement;
+};
+
 /** Hosts the Three.js scene and coordinates runtime input, loading, and audio playback. */
 export function BoardView() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -42,9 +47,13 @@ export function BoardView() {
   const audioTriggerRef = useRef(new Set<string>());
   const pulseMapRef = useRef(new Map<string, HitPulse>());
   const loadRequestRef = useRef(0);
+  const pressedPlacementIdsRef = useRef(new Set<string>());
+  const dragOccupancyRef = useRef<DragOccupancyState>({});
+  const stashPiecesRef = useRef<StashPiece[]>([]);
 
   const [preview, setPreview] = useState<PreviewPlacement | undefined>(undefined);
   const [draggingStashPieceId, setDraggingStashPieceId] = useState<string | undefined>(undefined);
+  const [draggingBoardBlockId, setDraggingBoardBlockId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState<LoadingState>({
     active: true,
     progress: 0,
@@ -68,6 +77,49 @@ export function BoardView() {
   const endDrag = useGameStore((state) => state.endDrag);
   const level = getActiveLevel({ activeLevelId, levels });
 
+  /** Mirrors drag occupancy into both refs and state so render paths and event handlers stay in sync. */
+  const syncDragOccupancy = (next: DragOccupancyState) => {
+    dragOccupancyRef.current = next;
+    setDraggingStashPieceId(next.stashPieceId);
+    setDraggingBoardBlockId(next.boardPlacement?.blockId);
+  };
+
+  /** Clears preview and drag-occupancy bookkeeping after level switches or drag completion. */
+  const clearTransientInteractionState = () => {
+    previewRef.current = undefined;
+    setPreview(undefined);
+    syncDragOccupancy({});
+  };
+
+  /** Rebuilds the visible reserve pieces from the latest level, placements, and drag occupancy. */
+  const getVisibleStashPieces = (activeLevel: typeof level, nextPlacements: Placement[]) =>
+    buildVisibleStashPieces(
+      buildStashSlots(activeLevel),
+      nextPlacements,
+      dragOccupancyRef.current.stashPieceId,
+      dragOccupancyRef.current.boardPlacement,
+    );
+
+  /** Pushes one complete render snapshot into the Three.js scene. */
+  const renderScene = (
+    activeLevel: typeof level,
+    beat: number,
+    nextPlacements: Placement[],
+    nextPreview: PreviewPlacement | undefined,
+    nextPressedPlacementIds: Set<string>,
+  ) => {
+    sceneRef.current?.update(
+      activeLevel,
+      beat,
+      nextPlacements,
+      useGameStore.getState().showPaths,
+      getVisibleStashPieces(activeLevel, nextPlacements),
+      nextPressedPlacementIds,
+      [...pulseMapRef.current.values()],
+      nextPreview,
+    );
+  };
+
   // Trigger: whenever the active level object changes. Purpose: keep async callbacks reading the latest level via ref.
   useEffect(() => {
     levelRef.current = level;
@@ -78,9 +130,10 @@ export function BoardView() {
     audioEngine.setMix(audioMix);
   }, [audioMix]);
 
+  const stashSlots = useMemo(() => buildStashSlots(level), [level]);
   const stashPieces = useMemo(
-    () => buildStashPieces(level, placements, draggingStashPieceId),
-    [draggingStashPieceId, level, placements],
+    () => buildVisibleStashPieces(stashSlots, placements, draggingStashPieceId, dragOccupancyRef.current.boardPlacement),
+    [draggingBoardBlockId, draggingStashPieceId, placements, stashSlots],
   );
   const animalVisits = useMemo(
     () => level.animals.flatMap((animal) => sampleAnimalPathVisits(animal, level.loopBeats)),
@@ -101,6 +154,11 @@ export function BoardView() {
     return pressed;
   }, [currentBeat, level, placements, simulation.producedTriggers]);
 
+  // Trigger: whenever visible reserve pieces change. Purpose: keep imperative pointer handlers aligned with the latest fixed stash slots.
+  useEffect(() => {
+    stashPiecesRef.current = stashPieces;
+  }, [stashPieces]);
+
   // Trigger: once on mount (plus stable callback identity changes). Purpose: create scene/transport and wire all input listeners.
   useEffect(() => {
     // Scene bootstrap: construct Three.js scene and mount renderer into the host container.
@@ -116,16 +174,7 @@ export function BoardView() {
     const unsubscribe = transport.subscribe((beat) => {
       setCurrentBeat(beat);
       const activeLevel = levelRef.current;
-      scene.update(
-        activeLevel,
-        beat,
-        useGameStore.getState().placements,
-        useGameStore.getState().showPaths,
-        buildStashPieces(activeLevel, useGameStore.getState().placements, draggingStashPieceIdRef.current),
-        pressedPlacementIdsRef.current,
-        [...pulseMapRef.current.values()],
-        previewRef.current,
-      );
+      renderScene(activeLevel, beat, useGameStore.getState().placements, previewRef.current, pressedPlacementIdsRef.current);
     });
 
     const dom = scene.getDomElement();
@@ -162,8 +211,7 @@ export function BoardView() {
 
       if (hit.kind === "stash") {
         dragSessionRef.current = { source: "stash", pieceId: hit.pieceId };
-        draggingStashPieceIdRef.current = hit.pieceId;
-        setDraggingStashPieceId(hit.pieceId);
+        syncDragOccupancy({ stashPieceId: hit.pieceId });
         startDrag(hit.blockId, { x: event.clientX, y: event.clientY }, 0);
         return;
       }
@@ -172,6 +220,7 @@ export function BoardView() {
         source: "board",
         originalPlacement: hit.placement,
       };
+      syncDragOccupancy({ boardPlacement: hit.placement });
       removePlacementAt(hit.placement.origin.x, hit.placement.origin.y);
       startDrag(hit.placement.blockId, { x: event.clientX, y: event.clientY }, hit.placement.rotation);
     };
@@ -200,6 +249,7 @@ export function BoardView() {
 
       const nextPlacement: Placement = {
         blockId: state.draggingBlockId,
+        pieceId: getDraggingPieceId(dragSessionRef.current),
         origin: cell,
         rotation: state.draggingRotation,
       };
@@ -212,16 +262,7 @@ export function BoardView() {
       }
       setPreview(nextPreview);
       previewRef.current = nextPreview;
-      scene.update(
-        activeLevel,
-        useGameStore.getState().currentBeat,
-        useGameStore.getState().placements,
-        useGameStore.getState().showPaths,
-        buildStashPieces(activeLevel, useGameStore.getState().placements, draggingStashPieceIdRef.current),
-        pressedPlacementIdsRef.current,
-        [...pulseMapRef.current.values()],
-        nextPreview,
-      );
+      renderScene(activeLevel, useGameStore.getState().currentBeat, useGameStore.getState().placements, nextPreview, pressedPlacementIdsRef.current);
     };
 
     // Pointer up finalize: commit valid preview, or rollback to original block placement when needed.
@@ -244,10 +285,7 @@ export function BoardView() {
       }
 
       dragSessionRef.current = null;
-      draggingStashPieceIdRef.current = undefined;
-      setDraggingStashPieceId(undefined);
-      previewRef.current = undefined;
-      setPreview(undefined);
+      clearTransientInteractionState();
       endDrag();
     };
 
@@ -277,9 +315,11 @@ export function BoardView() {
       }
 
       event.preventDefault();
+      const state = useGameStore.getState();
+      const rotation = state.draggingRotation === 0 ? 90 : 0;
       rotateDrag();
 
-      const pointer = useGameStore.getState().dragPointer;
+      const pointer = state.dragPointer;
       if (!pointer) {
         return;
       }
@@ -292,9 +332,9 @@ export function BoardView() {
         return;
       }
 
-      const rotation = useGameStore.getState().draggingRotation === 0 ? 90 : 0;
       const nextPlacement: Placement = {
-        blockId: useGameStore.getState().draggingBlockId!,
+        blockId: state.draggingBlockId!,
+        pieceId: getDraggingPieceId(dragSessionRef.current),
         origin: cell,
         rotation,
       };
@@ -382,10 +422,7 @@ export function BoardView() {
     lastBeatRef.current = 0;
     audioTriggerRef.current.clear();
     pulseMapRef.current.clear();
-    previewRef.current = undefined;
-    draggingStashPieceIdRef.current = undefined;
-    setDraggingStashPieceId(undefined);
-    setPreview(undefined);
+    clearTransientInteractionState();
   }, [level]);
 
   // Trigger: whenever level list changes. Purpose: preload all referenced animal models for faster next level switch.
@@ -402,16 +439,7 @@ export function BoardView() {
   // Trigger: on render-driving state updates (beat/placements/preview/path toggle). Purpose: draw the latest frame immediately.
   useEffect(() => {
     pressedPlacementIdsRef.current = pressedPlacementIds;
-    sceneRef.current?.update(
-      level,
-      currentBeat,
-      placements,
-      showPaths,
-      stashPieces,
-      pressedPlacementIds,
-      [...pulseMapRef.current.values()],
-      preview,
-    );
+    renderScene(level, currentBeat, placements, preview, pressedPlacementIds);
   }, [currentBeat, level, placements, preview, pressedPlacementIds, showPaths, stashPieces]);
 
   // Trigger: on beat/simulation updates. Purpose: emit audio and refresh per-animal pulse states from trigger/visit events.
@@ -497,9 +525,6 @@ export function BoardView() {
   );
 }
 
-const pressedPlacementIdsRef: { current: Set<string> } = { current: new Set<string>() };
-const draggingStashPieceIdRef: { current: string | undefined } = { current: undefined };
-
 /** Detects whether a looping playback cursor crossed a target beat this frame. */
 function crossedBeat(previous: number, current: number, target: number) {
   const epsilon = 0.0001;
@@ -516,86 +541,231 @@ function normalizedBeatDelta(currentBeat: number, targetBeat: number, loopBeats:
   return raw >= 0 ? raw : raw + loopBeats;
 }
 
-/** Builds stable reserve-ring pieces for any inventory blocks not currently in use. */
-function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: Placement[], draggingPieceId?: string) {
-  const usage = new Map<string, number>();
-  for (const placement of placements) {
-    usage.set(placement.blockId, (usage.get(placement.blockId) ?? 0) + 1);
+/** Builds the full fixed reserve-slot layout for a level. */
+function buildStashSlots(level: ReturnType<typeof getActiveLevel>) {
+  const layoutAxis = getReserveLayoutAxis();
+  const sortedInventory = [...level.inventory].sort(compareInventoryBlocks);
+  return layoutStashPieces(level.board.width, level.board.height, sortedInventory, layoutAxis);
+}
+
+/** Filters fixed reserve slots down to the pieces currently still available to the player. */
+function buildVisibleStashPieces(
+  slots: StashPiece[],
+  placements: Placement[],
+  draggingPieceId?: string,
+  draggingBoardPlacement?: Placement,
+) {
+  const consumedPieceIds = buildConsumedPieceIds(slots, placements, draggingBoardPlacement);
+  return slots.filter((piece) => !consumedPieceIds.has(piece.pieceId) && piece.pieceId !== draggingPieceId);
+}
+
+/** Picks whether reserve pieces should be distributed on top/bottom or left/right. */
+function getReserveLayoutAxis(): "horizontal" | "vertical" {
+  if (typeof window === "undefined") {
+    return "horizontal";
+  }
+  return window.innerWidth >= window.innerHeight ? "horizontal" : "vertical";
+}
+
+/** Sorts reserve inventory for a more legible arrangement by timbre and footprint length. */
+function compareInventoryBlocks(
+  left: ReturnType<typeof getActiveLevel>["inventory"][number],
+  right: ReturnType<typeof getActiveLevel>["inventory"][number],
+) {
+  const timbreOrder = left.timbre.localeCompare(right.timbre);
+  if (timbreOrder !== 0) {
+    return timbreOrder;
   }
 
-  const occupied = new Set<string>();
-  const candidates = buildReserveCells(level.board.width, level.board.height);
-  const allPieces = level.inventory.flatMap((block) => {
-    const used = usage.get(block.id) ?? 0;
-    const slots = Array.from({ length: block.quantity }, (_, index) => {
-      const cell = findReserveOrigin(candidates, occupied, block.width, block.height);
-      const stashPiece: StashPiece = {
+  const lengthOrder = Math.max(right.width, right.height) - Math.max(left.width, left.height);
+  if (lengthOrder !== 0) {
+    return lengthOrder;
+  }
+
+  const areaOrder = right.width * right.height - left.width * left.height;
+  if (areaOrder !== 0) {
+    return areaOrder;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+/** Lays out reserve pieces by timbre group, keeping them close to the board edges. */
+function layoutStashPieces(
+  boardWidth: number,
+  boardHeight: number,
+  inventory: ReturnType<typeof getActiveLevel>["inventory"],
+  layoutAxis: "horizontal" | "vertical",
+) {
+  const inventoryById = new Map(inventory.map((block) => [block.id, block]));
+  const groups = groupInventoryByTimbre(inventory);
+  const pieces: StashPiece[] = [];
+
+  if (layoutAxis === "horizontal") {
+    const leftGroups = groups.filter((_, index) => index % 2 === 0);
+    const rightGroups = groups.filter((_, index) => index % 2 === 1);
+    pieces.push(...layoutVerticalEdgeGroups(leftGroups, "left", boardWidth, boardHeight, inventoryById));
+    pieces.push(...layoutVerticalEdgeGroups(rightGroups, "right", boardWidth, boardHeight, inventoryById));
+    return pieces;
+  }
+
+  const topGroups = groups.filter((_, index) => index % 2 === 0);
+  const bottomGroups = groups.filter((_, index) => index % 2 === 1);
+  pieces.push(...layoutHorizontalEdgeGroups(topGroups, "top", boardWidth, boardHeight, inventoryById));
+  pieces.push(...layoutHorizontalEdgeGroups(bottomGroups, "bottom", boardWidth, boardHeight, inventoryById));
+  return pieces;
+}
+
+/** Groups currently available reserve pieces by timbre while preserving per-group sort order. */
+function groupInventoryByTimbre(
+  inventory: ReturnType<typeof getActiveLevel>["inventory"],
+) {
+  const groups = new Map<string, StashPiece[]>();
+  for (const block of inventory) {
+    const currentGroup = groups.get(block.timbre) ?? [];
+    for (let index = 0; index < block.quantity; index += 1) {
+      currentGroup.push({
         pieceId: `${block.id}-${index}`,
         blockId: block.id,
         rotation: 0,
-        worldX: cell.x,
-        worldZ: cell.y,
-      };
-      return stashPiece;
-    });
-    return slots.slice(0, Math.max(0, slots.length - used));
-  });
-  return allPieces.filter((piece) => piece.pieceId !== draggingPieceId);
+        worldX: 0,
+        worldZ: 0,
+      });
+    }
+    groups.set(block.timbre, currentGroup);
+  }
+
+  return [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, pieces]) => pieces);
 }
 
-/** Enumerates the reserve-ring cells used to lay out loose inventory blocks. */
-function buildReserveCells(width: number, height: number) {
-  const cells: { x: number; y: number }[] = [];
-  for (let ring = 2; ring <= RESERVE_MARGIN; ring += 1) {
-    const minX = -ring;
-    const maxX = width + ring - 1;
-    const minY = -ring;
-    const maxY = height + ring - 1;
-
-    for (let x = minX; x <= maxX; x += 1) {
-      cells.push({ x, y: minY }, { x, y: maxY });
-    }
-    for (let y = minY + 1; y < maxY; y += 1) {
-      cells.push({ x: minX, y }, { x: maxX, y });
-    }
-  }
-  const unique = new Map<string, { x: number; y: number }>();
-  for (const cell of cells) {
-    unique.set(`${cell.x},${cell.y}`, cell);
-  }
-  return [...unique.values()];
-}
-
-/** Finds the first reserve origin that can fit a block footprint without overlap. */
-function findReserveOrigin(
-  candidates: { x: number; y: number }[],
-  occupied: Set<string>,
-  width: number,
-  height: number,
+/** Lays out timbre groups from top to bottom on either the left or right side of the board. */
+function layoutVerticalEdgeGroups(
+  groups: StashPiece[][],
+  side: "left" | "right",
+  boardWidth: number,
+  boardHeight: number,
+  inventoryById: Map<string, ReturnType<typeof getActiveLevel>["inventory"][number]>,
 ) {
-  for (const candidate of candidates) {
-    let canPlace = true;
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        if (occupied.has(`${candidate.x + x},${candidate.y + y}`)) {
-          canPlace = false;
-        }
-      }
-    }
-    if (!canPlace) {
-      continue;
-    }
+  const placements: StashPiece[] = [];
+  let cursorY = -2;
 
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        occupied.add(`${candidate.x + x},${candidate.y + y}`);
+  for (const group of groups) {
+    for (const piece of group) {
+      const block = inventoryById.get(piece.blockId);
+      if (!block) {
+        continue;
       }
+
+      const rotation = getPreferredReserveRotation(block.width, block.height, "vertical");
+      const width = rotation === 90 ? block.height : block.width;
+      const height = rotation === 90 ? block.width : block.height;
+      const worldX = side === "left" ? -width - 1 : boardWidth + 1;
+      placements.push({
+        ...piece,
+        rotation,
+        worldX,
+        worldZ: cursorY,
+      });
+      cursorY += height + 1;
     }
-    return candidate;
+    cursorY += 1;
   }
 
-  return candidates[0] ?? { x: -RESERVE_MARGIN, y: -RESERVE_MARGIN };
+  return placements.filter((piece) => piece.worldZ <= boardHeight + RESERVE_MARGIN);
 }
+
+/** Lays out timbre groups from left to right on either the top or bottom side of the board. */
+function layoutHorizontalEdgeGroups(
+  groups: StashPiece[][],
+  side: "top" | "bottom",
+  boardWidth: number,
+  boardHeight: number,
+  inventoryById: Map<string, ReturnType<typeof getActiveLevel>["inventory"][number]>,
+) {
+  const placements: StashPiece[] = [];
+  let cursorX = -2;
+
+  for (const group of groups) {
+    for (const piece of group) {
+      const block = inventoryById.get(piece.blockId);
+      if (!block) {
+        continue;
+      }
+
+      const rotation = getPreferredReserveRotation(block.width, block.height, "horizontal");
+      const width = rotation === 90 ? block.height : block.width;
+      const height = rotation === 90 ? block.width : block.height;
+      const worldZ = side === "top" ? -height - 1 : boardHeight + 1;
+      placements.push({
+        ...piece,
+        rotation,
+        worldX: cursorX,
+        worldZ,
+      });
+      cursorX += width + 1;
+    }
+    cursorX += 1;
+  }
+
+  return placements.filter((piece) => piece.worldX <= boardWidth + RESERVE_MARGIN);
+}
+
+/** Resolves which fixed reserve slots are currently consumed by placed blocks. */
+function buildConsumedPieceIds(slots: StashPiece[], placements: Placement[], draggingBoardPlacement?: Placement) {
+  const usedCounts = new Map<string, number>();
+  for (const placement of placements) {
+    if (!placement.pieceId) {
+      usedCounts.set(placement.blockId, (usedCounts.get(placement.blockId) ?? 0) + 1);
+    }
+  }
+
+  const consumed = new Set<string>();
+  const perBlockSlots = new Map<string, StashPiece[]>();
+  for (const slot of slots) {
+    const currentSlots = perBlockSlots.get(slot.blockId) ?? [];
+    currentSlots.push(slot);
+    perBlockSlots.set(slot.blockId, currentSlots);
+  }
+
+  for (const placement of placements) {
+    if (placement.pieceId) {
+      consumed.add(placement.pieceId);
+    }
+  }
+  if (draggingBoardPlacement?.pieceId) {
+    consumed.add(draggingBoardPlacement.pieceId);
+  } else if (draggingBoardPlacement) {
+    usedCounts.set(draggingBoardPlacement.blockId, (usedCounts.get(draggingBoardPlacement.blockId) ?? 0) + 1);
+  }
+
+  for (const [blockId, count] of usedCounts) {
+    const blockSlots = perBlockSlots.get(blockId) ?? [];
+    let consumedForBlock = 0;
+    for (const slot of blockSlots) {
+      if (consumedForBlock >= count) {
+        break;
+      }
+      if (consumed.has(slot.pieceId)) {
+        continue;
+      }
+      consumed.add(slot.pieceId);
+      consumedForBlock += 1;
+    }
+  }
+
+  return consumed;
+}
+
+/** Chooses a default reserve-slot rotation so long bars face across the packing direction. */
+function getPreferredReserveRotation(width: number, height: number, flow: "horizontal" | "vertical"): 0 | 90 {
+  if (flow === "vertical") {
+    return width >= height ? 0 : 90;
+  }
+  return width >= height ? 90 : 0;
+}
+
 
 /** Builds a cell-key set for all currently occupied board cells by placed blocks. */
 function buildOccupiedCellSet(level: ReturnType<typeof getActiveLevel>, placements: Placement[]) {
@@ -631,4 +801,17 @@ function isSamePreview(left: PreviewPlacement | undefined, right: PreviewPlaceme
     left.placement.origin.x === right.placement.origin.x &&
     left.placement.origin.y === right.placement.origin.y
   );
+}
+
+/** Resolves the stash-piece identity currently being dragged so it can persist after placement. */
+function getDraggingPieceId(session: DragSession | null) {
+  if (!session) {
+    return undefined;
+  }
+
+  if (session.source === "stash") {
+    return session.pieceId;
+  }
+
+  return session.originalPlacement.pieceId;
 }

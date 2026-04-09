@@ -48,6 +48,7 @@ export type BlockVisualKind = "terrain" | "button";
 
 export type Placement = {
   blockId: string;
+  pieceId?: string;
   origin: Vec2;
   rotation: 0 | 90;
 };
