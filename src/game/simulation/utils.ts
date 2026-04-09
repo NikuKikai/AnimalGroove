@@ -1,8 +1,8 @@
 import type {
   AnimalDefinition,
+  LevelBlock,
   LevelDefinition,
   Placement,
-  PlaceableBlock,
   TriggerEvent,
   Vec2,
 } from "../types";
@@ -10,12 +10,12 @@ import { getAnimalProfile } from "../engine/animalRegistry";
 
 export type OccupiedCell = {
   placement: Placement;
-  block: PlaceableBlock;
+  block: LevelBlock;
   cell: Vec2;
 };
 
 /** Returns the axis-aligned size of a block after applying rotation. */
-export function rotateDimensions(block: PlaceableBlock, rotation: Placement["rotation"]) {
+export function rotateDimensions(block: LevelBlock, rotation: Placement["rotation"]) {
   if (rotation === 90) {
     return { width: block.height, height: block.width };
   }
@@ -28,13 +28,23 @@ export function getBlockedCellSet(level: LevelDefinition) {
   return new Set((level.board.blockedCells ?? []).map((cell) => `${cell.x},${cell.y}`));
 }
 
-/** Builds a map from inventory block id to block definition. */
-export function getInventoryMap(level: LevelDefinition) {
-  return new Map(level.inventory.map((block) => [block.id, block]));
+/** Builds a map from piece id to block definition. */
+export function getBlockMap(level: LevelDefinition) {
+  return new Map(level.blocks.map((block) => [block.pieceId, block]));
+}
+
+/** Returns the authored initial placements for a level. */
+export function getInitialPlacements(level: LevelDefinition): Placement[] {
+  return level.blocks.map((block) => ({
+    blockId: block.blockId,
+    pieceId: block.pieceId,
+    origin: block.initialPlacement.origin,
+    rotation: block.initialPlacement.rotation,
+  }));
 }
 
 /** Expands a placement into the cells covered by its footprint. */
-export function placementFootprint(block: PlaceableBlock, placement: Placement): Vec2[] {
+export function placementFootprint(block: LevelBlock, placement: Placement): Vec2[] {
   const { width, height } = rotateDimensions(block, placement.rotation);
   const footprint: Vec2[] = [];
 
@@ -49,34 +59,38 @@ export function placementFootprint(block: PlaceableBlock, placement: Placement):
 
 /** Validates placements for bounds, overlap, blocked cells, and inventory counts. */
 export function validatePlacements(level: LevelDefinition, placements: Placement[]) {
-  const inventoryMap = getInventoryMap(level);
+  const blockMap = getBlockMap(level);
   const blocked = getBlockedCellSet(level);
-  const usedCounts = new Map<string, number>();
+  const seenPieces = new Set<string>();
   const occupied = new Map<string, OccupiedCell>();
 
   for (const placement of placements) {
-    const block = inventoryMap.get(placement.blockId);
+    const block = blockMap.get(placement.pieceId);
     if (!block) {
-      return { valid: false, reason: `Unknown block: ${placement.blockId}` };
+      return { valid: false, reason: `Unknown block piece: ${placement.pieceId}` };
+    }
+
+    if (block.blockId !== placement.blockId) {
+      return { valid: false, reason: `Block id mismatch for piece: ${placement.pieceId}` };
     }
 
     if (placement.rotation === 90 && block.canRotate === false) {
-      return { valid: false, reason: `Block cannot rotate: ${placement.blockId}` };
+      return { valid: false, reason: `Block cannot rotate: ${placement.pieceId}` };
     }
 
-    usedCounts.set(placement.blockId, (usedCounts.get(placement.blockId) ?? 0) + 1);
-    if ((usedCounts.get(placement.blockId) ?? 0) > block.quantity) {
-      return { valid: false, reason: `Block quantity exceeded: ${placement.blockId}` };
+    if (seenPieces.has(placement.pieceId)) {
+      return { valid: false, reason: `Duplicate block piece: ${placement.pieceId}` };
     }
+    seenPieces.add(placement.pieceId);
 
     for (const cell of placementFootprint(block, placement)) {
       if (cell.x < 0 || cell.x >= level.board.width || cell.y < 0 || cell.y >= level.board.height) {
-        return { valid: false, reason: `Block out of bounds: ${placement.blockId}` };
+        return { valid: false, reason: `Block out of bounds: ${placement.pieceId}` };
       }
 
       const key = `${cell.x},${cell.y}`;
       if (blocked.has(key)) {
-        return { valid: false, reason: `Block on blocked cell: ${placement.blockId}` };
+        return { valid: false, reason: `Block on blocked cell: ${placement.pieceId}` };
       }
 
       if (occupied.has(key)) {
@@ -176,14 +190,14 @@ export function buildTriggerEvents(level: LevelDefinition, placements: Placement
       }
 
       triggers.push({
-        id: `${animal.id}-${hit.placement.blockId}-${visit.beat.toFixed(3)}-${visit.cell.x}-${visit.cell.y}`,
+        id: `${animal.id}-${hit.placement.pieceId}-${visit.beat.toFixed(3)}-${visit.cell.x}-${visit.cell.y}`,
         beat: visit.beat,
         timbre: hit.block.timbre,
         animalId: animal.id,
         animalType: animal.animalType,
         weight: profile.weight,
         effect: profile.effect,
-        placementId: hit.placement.blockId,
+        placementId: hit.placement.pieceId,
         placementInstanceId: placementInstanceKey(hit.placement),
         cell: visit.cell,
       });
@@ -223,5 +237,5 @@ export function computePathMetrics(waypoints: Vec2[]): PathMetrics {
 
 /** Produces a stable identifier for a concrete placed block instance. */
 export function placementInstanceKey(placement: Placement) {
-  return `${placement.blockId}:${placement.origin.x}:${placement.origin.y}:${placement.rotation}`;
+  return `${placement.pieceId}:${placement.origin.x}:${placement.origin.y}:${placement.rotation}`;
 }

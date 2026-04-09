@@ -26,14 +26,13 @@ Both families still share the same gameplay semantics:
 
 ## Rendering Rule
 
-Base terrain is split into two layers:
+Base terrain is now a single board layer:
 
 - Board terrain: grass tiles inside the playable board.
-- Reserve terrain: open-path tiles in the inventory reserve area.
 
 When a terrain block occupies a cell:
 
-- The corresponding board or reserve base tile is omitted.
+- The corresponding board base tile is omitted.
 - The terrain block model becomes the only visible surface for that cell.
 
 When a button block occupies a cell:
@@ -52,13 +51,12 @@ The mapping currently lives in `src/game/render/blockVisuals.ts`.
 ## Implementation Notes
 
 - `src/game/render/threeScene.ts`
-  - Rebuilds board and reserve terrain masks from current placements and reserve pieces.
-  - Chooses the correct mesh factory for placed blocks, reserve blocks, and drag preview.
+  - Builds the board terrain once per level and only toggles covered cells afterward.
+  - Chooses the correct mesh factory for placed blocks and in-place drag preview.
 - `src/game/render/sceneMeshes.ts`
   - Contains the mesh factories for:
     - button blocks
     - terrain blocks
-    - masked tiled terrain areas
 - `src/game/render/blockVisuals.ts`
   - Defines the visual-kind policy.
 

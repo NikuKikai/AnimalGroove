@@ -13,20 +13,17 @@ import {
 } from "./sceneMeshes";
 import { getBlockVisualKind } from "./blockVisuals";
 import { computePathOffset, normalizedBeatDelta, sampleAnimalPosition } from "./sceneMotion";
-import type { HitPulse, PreviewPlacement, SceneHit, StashPiece } from "./sceneTypes";
 import type { BlockTileTemplates } from "./sceneMeshes";
+import type { HitPulse, PreviewPlacement, SceneHit } from "./sceneTypes";
 
-export type { HitPulse, PreviewPlacement, SceneHit, StashPiece } from "./sceneTypes";
+export type { HitPulse, PreviewPlacement, SceneHit } from "./sceneTypes";
 
 type SceneState = {
   animalRoots: Map<string, THREE.Object3D>;
   animalFallbacks: Map<string, THREE.Object3D>;
   pathLines: THREE.Line[];
   blockMeshes: Map<string, THREE.Object3D>;
-  stashMeshes: Map<string, THREE.Object3D>;
   hitPulseMeshes: Map<string, THREE.Mesh>;
-  previewMesh?: THREE.Object3D;
-  previewSignature?: string;
   terrainRoot?: THREE.Object3D;
   terrainCells: Map<string, THREE.Object3D>;
   terrainHiddenSignature?: string;
@@ -36,8 +33,8 @@ type SceneState = {
 type CameraDragMode = "pan" | "rotate";
 
 const pathPalette = ["#ffaf45", "#58c4dd", "#ffc857", "#ff7f7f", "#b291ff", "#7bd389"];
-export const RESERVE_MARGIN = 8;
 
+/** Hosts the Three.js scene, persistent block meshes, and camera controls for one board view. */
 export class ThreeScene {
   private loadVersion = 0;
 
@@ -78,13 +75,12 @@ export class ThreeScene {
     animalFallbacks: new Map(),
     pathLines: [],
     blockMeshes: new Map(),
-    stashMeshes: new Map(),
     hitPulseMeshes: new Map(),
     terrainCells: new Map(),
     iconTextureCache: new Map(),
   };
 
-  /** Creates the scene, camera, renderer, and shared lights. */
+  /** Creates the renderer, camera, and shared lighting rig. */
   constructor() {
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.scene.background = new THREE.Color("#0f1718");
@@ -101,19 +97,19 @@ export class ThreeScene {
     await preloadModelTemplates(paths, onProgress);
   }
 
-  /** Mounts the WebGL canvas into a host element. */
+  /** Mounts the renderer canvas into a host element. */
   mount(element: HTMLDivElement) {
     this.mountedElement = element;
     element.appendChild(this.renderer.domElement);
     this.resize();
   }
 
-  /** Returns the renderer canvas used for pointer event wiring. */
+  /** Returns the renderer DOM node so callers can wire pointer events. */
   getDomElement() {
     return this.renderer.domElement;
   }
 
-  /** Starts a camera drag gesture for panning or orbit rotation. */
+  /** Starts a camera drag gesture for either panning or orbit rotation. */
   beginCameraDrag(mode: CameraDragMode, clientX: number, clientY: number) {
     this.activeCameraDrag = {
       mode,
@@ -122,7 +118,7 @@ export class ThreeScene {
     };
   }
 
-  /** Updates the active camera drag gesture and applies constrained motion. */
+  /** Applies one camera drag step and clamps the resulting target and pitch. */
   updateCameraDrag(clientX: number, clientY: number) {
     if (!this.activeCameraDrag || !this.mountedElement) {
       return;
@@ -159,14 +155,14 @@ export class ThreeScene {
     this.activeCameraDrag = undefined;
   }
 
-  /** Zooms the camera in or out while keeping distance and target inside limits. */
+  /** Zooms the orbit camera in or out while staying within the configured distance range. */
   zoomCamera(deltaY: number) {
     const zoomFactor = Math.exp(deltaY * 0.0012);
     this.orbitDistance = THREE.MathUtils.clamp(this.orbitDistance * zoomFactor, 6.5, 28);
     this.updateCamera();
   }
 
-  /** Resizes the renderer and camera to match the mounted element. */
+  /** Resizes the renderer and perspective camera to match the mount element. */
   resize() {
     if (!this.mountedElement) {
       return;
@@ -178,7 +174,7 @@ export class ThreeScene {
     this.renderer.setSize(clientWidth, clientHeight);
   }
 
-  /** Reconfigures the board and animal content for a new level. */
+  /** Reconfigures terrain, paths, and animals for a newly loaded level. */
   async loadLevel(level: LevelDefinition, onProgress?: (progress: number) => void) {
     const version = ++this.loadVersion;
     this.clearDynamicLevel();
@@ -191,31 +187,29 @@ export class ThreeScene {
     await this.addAnimals(level, version, onProgress);
   }
 
-  /** Renders the current frame from gameplay state and transient preview state. */
+  /** Renders one frame from the current gameplay state and transient drag preview. */
   update(
     level: LevelDefinition,
     beat: number,
     placements: Placement[],
     showPaths: boolean,
-    stashPieces: StashPiece[],
     pressedPlacementIds: Set<string>,
     hitPulses: HitPulse[],
     preview?: PreviewPlacement,
   ) {
+    const renderedPlacements = applyPreviewPlacement(placements, preview);
     this.updateAnimals(level, beat);
-    this.updateTerrain(level, placements, stashPieces, preview);
-    this.updateBlocks(level, placements, pressedPlacementIds);
+    this.updateTerrain(level, renderedPlacements);
+    this.updateBlocks(level, renderedPlacements, pressedPlacementIds, preview);
     this.updateHitPulses(level, beat, hitPulses);
-    this.updateStash(level, stashPieces);
-    this.updatePreview(level, preview);
     for (const pathLine of this.state.pathLines) {
       pathLine.visible = showPaths;
     }
     this.renderer.render(this.scene, this.camera);
   }
 
-  /** Converts a screen-space pointer position into a board or reserve cell. */
-  getCellFromPointer(clientX: number, clientY: number, level: LevelDefinition, includeReserve = false) {
+  /** Converts a pointer position into a board cell in integer grid coordinates. */
+  getCellFromPointer(clientX: number, clientY: number, level: LevelDefinition) {
     if (!this.mountedElement) {
       return undefined;
     }
@@ -233,18 +227,14 @@ export class ThreeScene {
 
     const x = Math.floor(hitPoint.x + 0.5);
     const y = Math.floor(hitPoint.z + 0.5);
-    const minX = includeReserve ? -RESERVE_MARGIN : 0;
-    const maxX = includeReserve ? level.board.width + RESERVE_MARGIN - 1 : level.board.width - 1;
-    const minY = includeReserve ? -RESERVE_MARGIN : 0;
-    const maxY = includeReserve ? level.board.height + RESERVE_MARGIN - 1 : level.board.height - 1;
-    if (x < minX || x > maxX || y < minY || y > maxY) {
+    if (x < 0 || x > level.board.width - 1 || y < 0 || y > level.board.height - 1) {
       return undefined;
     }
 
     return { x, y };
   }
 
-  /** Returns the first stash or placement object hit by a pointer ray. */
+  /** Returns the first placed block hit by a pointer ray. */
   pickSceneObject(clientX: number, clientY: number): SceneHit | undefined {
     if (!this.mountedElement) {
       return undefined;
@@ -255,10 +245,7 @@ export class ThreeScene {
     this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
 
-    const hits = this.raycaster.intersectObjects(
-      [...this.state.stashMeshes.values(), ...this.state.blockMeshes.values()],
-      true,
-    );
+    const hits = this.raycaster.intersectObjects([...this.state.blockMeshes.values()], true);
     let first = hits[0]?.object;
     if (!first) {
       return undefined;
@@ -268,16 +255,7 @@ export class ThreeScene {
       first = first.parent;
     }
 
-    const kind = first.userData.kind as string | undefined;
-    if (kind === "stash") {
-      return {
-        kind: "stash",
-        pieceId: first.userData.pieceId as string,
-        blockId: first.userData.blockId as string,
-      };
-    }
-
-    if (kind === "placement") {
+    if (first.userData.kind === "placement") {
       return {
         kind: "placement",
         placement: first.userData.placement as Placement,
@@ -287,7 +265,7 @@ export class ThreeScene {
     return undefined;
   }
 
-  /** Releases scene resources and detaches the canvas. */
+  /** Releases scene resources and detaches the renderer canvas. */
   dispose() {
     this.activeCameraDrag = undefined;
     this.clearLevel();
@@ -297,7 +275,7 @@ export class ThreeScene {
     }
   }
 
-  /** Clears both persistent and dynamic scene content. */
+  /** Removes all persistent and per-level scene objects. */
   private clearLevel() {
     this.clearDynamicLevel();
     this.removeObject(this.state.terrainRoot);
@@ -309,10 +287,7 @@ export class ThreeScene {
       animalFallbacks: new Map(),
       pathLines: [],
       blockMeshes: new Map(),
-      stashMeshes: new Map(),
       hitPulseMeshes: new Map(),
-      previewMesh: undefined,
-      previewSignature: undefined,
       terrainRoot: undefined,
       terrainCells: new Map(),
       terrainHiddenSignature: undefined,
@@ -320,32 +295,25 @@ export class ThreeScene {
     };
   }
 
-  /** Clears level-specific meshes while preserving reusable board objects. */
+  /** Clears the current level's dynamic content while preserving reusable scene infrastructure. */
   private clearDynamicLevel() {
     for (const object of [
       ...this.state.animalRoots.values(),
       ...this.state.animalFallbacks.values(),
       ...this.state.pathLines,
       ...this.state.blockMeshes.values(),
-      ...this.state.stashMeshes.values(),
       ...this.state.hitPulseMeshes.values(),
     ]) {
       this.disposeSceneObject(object);
-    }
-    if (this.state.previewMesh) {
-      this.disposeSceneObject(this.state.previewMesh);
     }
     this.state.animalRoots.clear();
     this.state.animalFallbacks.clear();
     this.state.pathLines = [];
     this.state.blockMeshes.clear();
-    this.state.stashMeshes.clear();
     this.state.hitPulseMeshes.clear();
-    this.state.previewMesh = undefined;
-    this.state.previewSignature = undefined;
   }
 
-  /** Rebuilds the unified terrain grid for the active level. */
+  /** Builds one grass-tile mesh per board cell so terrain visibility can be toggled cheaply. */
   private configureBoard(level: LevelDefinition) {
     this.currentBoardSize = { width: level.board.width, height: level.board.height };
     this.removeObject(this.state.terrainRoot);
@@ -357,12 +325,10 @@ export class ThreeScene {
     }
 
     const terrainRoot = new THREE.Group();
-    for (let y = -RESERVE_MARGIN; y <= level.board.height + RESERVE_MARGIN - 1; y += 1) {
-      for (let x = -RESERVE_MARGIN; x <= level.board.width + RESERVE_MARGIN - 1; x += 1) {
-        const inBoard = x >= 0 && x < level.board.width && y >= 0 && y < level.board.height;
-        const template = inBoard ? this.blockTiles.grass : this.blockTiles.inventory;
-        const cellMesh = template.clone(true);
-        cellMesh.position.set(x, inBoard ? 0 : 0.05, y);
+    for (let y = 0; y < level.board.height; y += 1) {
+      for (let x = 0; x < level.board.width; x += 1) {
+        const cellMesh = this.blockTiles.grass.clone(true);
+        cellMesh.position.set(x, 0, y);
         terrainRoot.add(cellMesh);
         this.state.terrainCells.set(`${x},${y}`, cellMesh);
       }
@@ -372,7 +338,7 @@ export class ThreeScene {
     this.scene.add(terrainRoot);
   }
 
-  /** Fits the orbit target and distance to the active board while keeping motion bounded. */
+  /** Fits the orbit camera target and distance to the active board bounds. */
   private fitCameraToBoard(level: LevelDefinition) {
     this.orbitTarget.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
     this.orbitDistance = THREE.MathUtils.clamp(Math.max(level.board.width, level.board.height) * 1.7, 8, 26);
@@ -380,7 +346,7 @@ export class ThreeScene {
     this.updateCamera();
   }
 
-  /** Keeps the camera target inside a padded rectangle around the board. */
+  /** Keeps the camera target inside a padded rectangle around the current board. */
   private clampCameraTarget(level?: LevelDefinition) {
     const boardWidth = level?.board.width ?? this.currentBoardSize.width;
     const boardHeight = level?.board.height ?? this.currentBoardSize.height;
@@ -401,7 +367,7 @@ export class ThreeScene {
     this.camera.lookAt(this.orbitTarget);
   }
 
-  /** Draws debug path lines for every animal loop. */
+  /** Draws closed loop hints for every animal path. */
   private addPaths(level: LevelDefinition) {
     for (let index = 0; index < level.animals.length; index += 1) {
       const animal = level.animals[index];
@@ -474,7 +440,7 @@ export class ThreeScene {
     }
   }
 
-  /** Updates animal transforms for the current beat position. */
+  /** Updates animal transforms so they move continuously and jump at each landing. */
   private updateAnimals(level: LevelDefinition, beat: number) {
     for (const animal of level.animals) {
       const point = sampleAnimalPosition(
@@ -494,47 +460,63 @@ export class ThreeScene {
         continue;
       }
 
-      root.position.set(point.x, 0 + point.jumpHeight, point.y);
+      root.position.set(point.x, point.jumpHeight, point.y);
       root.lookAt(nextPoint.x, root.position.y, nextPoint.y);
     }
   }
 
-  /** Syncs placed block meshes with gameplay placements and hit states. */
-  private updateBlocks(level: LevelDefinition, placements: Placement[], pressedPlacementIds: Set<string>) {
+  /** Updates placed block meshes in place, reusing one scene object per block piece. */
+  private updateBlocks(
+    level: LevelDefinition,
+    placements: Placement[],
+    pressedPlacementIds: Set<string>,
+    preview?: PreviewPlacement,
+  ) {
     if (!this.blockTiles) {
       return;
     }
 
-    const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
+    const blockMap = new Map(level.blocks.map((block) => [block.pieceId, block]));
     const nextKeys = new Set<string>();
+
     for (const placement of placements) {
-      const block = blockMap.get(placement.blockId);
+      const block = blockMap.get(placement.pieceId);
       if (!block) {
         continue;
       }
 
-      const meshKey = placementKey(placement);
-      nextKeys.add(meshKey);
-      let mesh = this.state.blockMeshes.get(meshKey);
+      const meshKey = block.pieceId;
+      const previewState =
+        preview?.placement.pieceId === block.pieceId ? (preview.valid ? "valid" : "invalid") : "none";
       const visualKind = getBlockVisualKind(block);
-      const expectedRenderMode = visualKind;
-      const needsRebuild = Boolean(mesh && mesh.userData.renderMode !== expectedRenderMode);
-      if (mesh && needsRebuild) {
+      const renderSignature = `${visualKind}:${placement.rotation}:${previewState}`;
+      nextKeys.add(meshKey);
+
+      let mesh = this.state.blockMeshes.get(meshKey);
+      if (mesh && mesh.userData.renderSignature !== renderSignature) {
         this.disposeSceneObject(mesh);
         this.state.blockMeshes.delete(meshKey);
         mesh = undefined;
       }
+
       if (!mesh) {
         mesh =
           visualKind === "terrain"
-            ? createBlockModelMesh(this.blockTiles, block.timbre, block, placement.rotation)
-            : createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, placement.rotation);
-        mesh.userData.renderMode = expectedRenderMode;
+            ? createBlockModelMesh(this.blockTiles, block.timbre, block, placement.rotation, 1, previewState)
+            : createBlockMesh(
+              this.state.iconTextureCache,
+              block.timbre,
+              previewState === "invalid" ? "#ff5f57" : block.color,
+              block,
+              placement.rotation,
+              previewState === "none" ? 1 : 0.78,
+            );
+        mesh.userData.renderSignature = renderSignature;
         this.state.blockMeshes.set(meshKey, mesh);
         this.scene.add(mesh);
       }
 
-      const isPressed = pressedPlacementIds.has(placementKey(placement));
+      const isPressed = previewState === "none" && pressedPlacementIds.has(placementKey(placement));
       const pressDepth = visualKind === "button" && isPressed ? 0.1 : 0;
       mesh.scale.y = visualKind === "button" && isPressed ? 0.52 : 1;
       mesh.position.set(
@@ -557,7 +539,7 @@ export class ThreeScene {
     }
   }
 
-  /** Renders expanding hit rings below blocks for matched and wrong notes. */
+  /** Updates expanding pulse meshes at each animal landing point. */
   private updateHitPulses(level: LevelDefinition, beat: number, hitPulses: HitPulse[]) {
     const durationBeats = 0.52;
     for (const mesh of this.state.hitPulseMeshes.values()) {
@@ -592,118 +574,38 @@ export class ThreeScene {
     }
   }
 
-  /** Syncs reserve-ring block meshes with the currently unused inventory. */
-  private updateStash(level: LevelDefinition, stashPieces: StashPiece[]) {
+  /** Hides board terrain cells that are replaced by terrain-style blocks. */
+  private updateTerrain(level: LevelDefinition, placements: Placement[]) {
     if (!this.blockTiles) {
       return;
     }
 
-    const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
-    const nextKeys = new Set<string>();
-    for (const piece of stashPieces) {
-      const block = blockMap.get(piece.blockId);
-      if (!block) {
+    const blockMap = new Map(level.blocks.map((block) => [block.pieceId, block]));
+    const hiddenCells = new Set<string>();
+
+    for (const placement of placements) {
+      const block = blockMap.get(placement.pieceId);
+      if (!block || getBlockVisualKind(block) !== "terrain") {
         continue;
       }
 
-      const meshKey = piece.pieceId;
-      nextKeys.add(meshKey);
-      let mesh = this.state.stashMeshes.get(meshKey);
-      const visualKind = getBlockVisualKind(block);
-      const expectedRenderMode = visualKind;
-      const needsRebuild = Boolean(mesh && mesh.userData.renderMode !== expectedRenderMode);
-      if (mesh && needsRebuild) {
-        this.disposeSceneObject(mesh);
-        this.state.stashMeshes.delete(meshKey);
-        mesh = undefined;
+      for (const cell of getFootprintCells(block, placement.origin.x, placement.origin.y, placement.rotation)) {
+        hiddenCells.add(`${cell.x},${cell.y}`);
       }
-      if (!mesh) {
-        mesh =
-          visualKind === "terrain"
-            ? createBlockModelMesh(this.blockTiles, block.timbre, block, piece.rotation, 0.92)
-            : createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, piece.rotation, 0.92);
-        mesh.userData.renderMode = expectedRenderMode;
-        this.state.stashMeshes.set(meshKey, mesh);
-        this.scene.add(mesh);
-      }
-      mesh.position.set(
-        piece.worldX + getDisplayOffset(block, piece.rotation).x,
-        0,
-        piece.worldZ + getDisplayOffset(block, piece.rotation).y,
-      );
-      applyPickData(mesh, {
-        kind: "stash",
-        pieceId: piece.pieceId,
-        blockId: piece.blockId,
-      });
     }
 
-    for (const [meshKey, mesh] of this.state.stashMeshes) {
-      if (nextKeys.has(meshKey)) {
-        continue;
-      }
-      this.disposeSceneObject(mesh);
-      this.state.stashMeshes.delete(meshKey);
-    }
-  }
-
-  /** Updates the ghost placement mesh shown while dragging a block. */
-  private updatePreview(level: LevelDefinition, preview?: PreviewPlacement) {
-    if (!preview) {
-      if (this.state.previewMesh) {
-        this.disposeSceneObject(this.state.previewMesh);
-        this.state.previewMesh = undefined;
-        this.state.previewSignature = undefined;
-      }
+    const hiddenSignature = [...hiddenCells].sort().join("|");
+    if (hiddenSignature === this.state.terrainHiddenSignature) {
       return;
     }
 
-    const block = level.inventory.find((entry) => entry.id === preview.placement.blockId);
-    if (!block) {
-      return;
+    for (const [key, cellMesh] of this.state.terrainCells) {
+      cellMesh.visible = !hiddenCells.has(key);
     }
-
-    const previewSignature = `${preview.placement.blockId}:${preview.placement.rotation}:${preview.valid}`;
-    let mesh = this.state.previewMesh;
-    if (!mesh || this.state.previewSignature !== previewSignature) {
-      if (mesh) {
-        this.disposeSceneObject(mesh);
-      }
-      if (!this.blockTiles) {
-        return;
-      }
-      const visualKind = getBlockVisualKind(block);
-      mesh =
-        visualKind === "terrain"
-          ? createBlockModelMesh(
-            this.blockTiles,
-            block.timbre,
-            block,
-            preview.placement.rotation,
-            1,
-            preview.valid ? "valid" : "invalid",
-          )
-          : createBlockMesh(
-            this.state.iconTextureCache,
-            block.timbre,
-            preview.valid ? block.color : "#ff5f57",
-            block,
-            preview.placement.rotation,
-            0.55,
-          );
-      this.state.previewMesh = mesh;
-      this.state.previewSignature = previewSignature;
-      this.scene.add(mesh);
-    }
-
-    mesh.position.set(
-      preview.placement.origin.x + getDisplayOffset(block, preview.placement.rotation).x,
-      0,
-      preview.placement.origin.y + getDisplayOffset(block, preview.placement.rotation).y,
-    );
+    this.state.terrainHiddenSignature = hiddenSignature;
   }
 
-  /** Removes an object from the scene when it exists. */
+  /** Removes one optional scene object. */
   private removeObject(object?: THREE.Object3D) {
     if (!object) {
       return;
@@ -711,6 +613,7 @@ export class ThreeScene {
     this.scene.remove(object);
   }
 
+  /** Disposes a scene object and any owned geometry or material resources. */
   private disposeSceneObject(object?: THREE.Object3D) {
     if (!object) {
       return;
@@ -732,63 +635,11 @@ export class ThreeScene {
     });
   }
 
-  /** Hides terrain cells currently replaced by terrain blocks, without rebuilding the terrain grid. */
-  private updateTerrain(
-    level: LevelDefinition,
-    placements: Placement[],
-    stashPieces: StashPiece[],
-    preview?: PreviewPlacement,
-  ) {
-    if (!this.blockTiles) {
-      return;
-    }
-
-    const inventoryMap = new Map(level.inventory.map((block) => [block.id, block]));
-    const hiddenCells = new Set<string>();
-
-    for (const placement of placements) {
-      const block = inventoryMap.get(placement.blockId);
-      if (!block || getBlockVisualKind(block) !== "terrain") {
-        continue;
-      }
-      for (const cell of getFootprintCells(block, placement.origin.x, placement.origin.y, placement.rotation)) {
-        hiddenCells.add(`${cell.x},${cell.y}`);
-      }
-    }
-
-    for (const piece of stashPieces) {
-      const block = inventoryMap.get(piece.blockId);
-      if (!block || getBlockVisualKind(block) !== "terrain") {
-        continue;
-      }
-      for (const cell of getFootprintCells(block, piece.worldX, piece.worldZ, piece.rotation)) {
-        hiddenCells.add(`${cell.x},${cell.y}`);
-      }
-    }
-
-    if (preview) {
-      const block = inventoryMap.get(preview.placement.blockId);
-      if (block && getBlockVisualKind(block) === "terrain") {
-        for (const cell of getFootprintCells(block, preview.placement.origin.x, preview.placement.origin.y, preview.placement.rotation)) {
-          hiddenCells.add(`${cell.x},${cell.y}`);
-        }
-      }
-    }
-
-    const hiddenSignature = [...hiddenCells].sort().join("|");
-    if (hiddenSignature === this.state.terrainHiddenSignature) {
-      return;
-    }
-
-    for (const [key, cellMesh] of this.state.terrainCells) {
-      cellMesh.visible = !hiddenCells.has(key);
-    }
-    this.state.terrainHiddenSignature = hiddenSignature;
-  }
-
-  /** Loads all block tile templates defined in docs/spec.md from the shared asset registry. */
+  /** Loads and normalizes all terrain and terrain-block tile templates. */
   private async ensureBlockTileTemplates(onProgress?: (progress: number) => void) {
-    const entries = Object.entries(blockTileModelPaths) as Array<[keyof typeof blockTileModelPaths, (typeof blockTileModelPaths)[keyof typeof blockTileModelPaths]]>;
+    const entries = Object.entries(blockTileModelPaths) as Array<
+      [keyof typeof blockTileModelPaths, (typeof blockTileModelPaths)[keyof typeof blockTileModelPaths]]
+    >;
     const loaded = await Promise.all(
       entries.map(async ([key, asset], index) => {
         const template = await loadModelTemplate(asset);
@@ -799,7 +650,7 @@ export class ThreeScene {
     this.blockTiles = Object.fromEntries(loaded) as BlockTileTemplates;
   }
 
-  /** Normalizes one tile template so each model occupies roughly one cell, is centered, and sits on y=0. */
+  /** Normalizes one imported tile so it fills one grid cell and rests on y=0. */
   private normalizeBlockTileTemplate(template: THREE.Object3D, yOffset: number) {
     const normalized = template.clone(true);
     normalizeImportedModelMaterials(normalized);
@@ -822,7 +673,18 @@ export class ThreeScene {
   }
 }
 
-/** Enumerates the occupied integer cells of a block footprint at a world-space origin. */
+/** Replaces one block placement with its drag preview while preserving array order. */
+function applyPreviewPlacement(placements: Placement[], preview?: PreviewPlacement) {
+  if (!preview) {
+    return placements;
+  }
+
+  return placements.map((placement) =>
+    placement.pieceId === preview.placement.pieceId ? preview.placement : placement,
+  );
+}
+
+/** Enumerates the integer cells covered by one axis-aligned block footprint. */
 function getFootprintCells(
   block: { width: number; height: number },
   originX: number,
@@ -840,12 +702,12 @@ function getFootprintCells(
   return cells;
 }
 
-/** Returns the stable key used to identify a placed block instance. */
+/** Returns the stable key used to identify one placed block event instance. */
 export function placementKey(placement: Placement) {
   return placementInstanceKey(placement);
 }
 
-/** Normalizes imported lit materials so blocks and animals respond to scene lights more consistently. */
+/** Normalizes imported lit materials so blocks and animals share the same scene lighting. */
 function normalizeImportedModelMaterials(root: THREE.Object3D) {
   root.traverse((child) => {
     const mesh = child as THREE.Mesh;
@@ -865,7 +727,7 @@ function normalizeImportedModelMaterials(root: THREE.Object3D) {
   });
 }
 
-/** Removes baked self-lighting bias from imported materials while preserving base color textures. */
+/** Removes baked emissive bias from imported materials while keeping their base textures intact. */
 function normalizeImportedMaterial(material: THREE.Material) {
   const litMaterial = material as THREE.MeshStandardMaterial;
   if ("emissive" in litMaterial && litMaterial.emissive) {

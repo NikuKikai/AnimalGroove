@@ -33,22 +33,25 @@ export type AnimalProfile = {
   effect: string;
 };
 
-export type PlaceableBlock = {
-  id: string;
+export type LevelBlock = {
+  blockId: string;
+  pieceId: string;
   name: string;
   width: number;
   height: number;
   timbre: string;
-  quantity: number;
   canRotate?: boolean;
   color: string;
+  initialPlacement: Placement;
 };
+
+export type PlaceableBlock = LevelBlock;
 
 export type BlockVisualKind = "terrain" | "button";
 
 export type Placement = {
   blockId: string;
-  pieceId?: string;
+  pieceId: string;
   origin: Vec2;
   rotation: 0 | 90;
 };
@@ -73,7 +76,7 @@ export type LevelDefinition = {
   loopBeats: number;
   board: BoardDefinition;
   animals: AnimalDefinition[];
-  inventory: PlaceableBlock[];
+  blocks: LevelBlock[];
   targetRhythm: RhythmEvent[];
   judge: JudgeConfig;
   models: ModelRegistry;

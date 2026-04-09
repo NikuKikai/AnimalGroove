@@ -2,13 +2,10 @@ import * as THREE from "three";
 import type { Placement } from "../types";
 import type { HitPulse } from "./sceneTypes";
 
-export type PickData =
-  | { kind: "stash"; pieceId: string; blockId: string }
-  | { kind: "placement"; placement: Placement };
+export type PickData = { kind: "placement"; placement: Placement };
 
 export type BlockTileTemplates = {
   grass: THREE.Object3D;
-  inventory: THREE.Object3D;
   pathEnd: THREE.Object3D;
   pathStraight: THREE.Object3D;
   pathCorner: THREE.Object3D;

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { ensembleLevel, tutorialLevel } from "../../data/levels";
-import { evaluatePlacements, generateLevelFromPaths, solveLevel, validatePlacements } from "../simulation";
+import { evaluatePlacements, generateLevelFromPaths, getInitialPlacements, solveLevel, validatePlacements } from "../simulation";
 import type { LevelDefinition, Placement, SimulationResult } from "../types";
 
 export type AudioChannelKey = "hit" | "reference" | "wrong";
@@ -12,6 +12,7 @@ type GameState = {
   activeLevelId: string;
   generatedLevelId?: string;
   placements: Placement[];
+  draggingPieceId?: string;
   draggingBlockId?: string;
   draggingRotation: 0 | 90;
   dragPointer?: { x: number; y: number };
@@ -28,13 +29,12 @@ type GameState = {
   togglePaths: () => void;
   setAudioVolume: (channel: AudioChannelKey, volume: number) => void;
   toggleAudioMute: (channel: AudioChannelKey) => void;
-  startDrag: (blockId: string, pointer: { x: number; y: number }, rotation?: 0 | 90) => void;
+  startDrag: (pieceId: string, blockId: string, pointer: { x: number; y: number }, rotation?: 0 | 90) => void;
   updateDragPointer: (pointer: { x: number; y: number }) => void;
   rotateDrag: () => void;
   endDrag: () => void;
   resetPlacements: () => void;
-  placeBlock: (placement: Placement) => void;
-  removePlacementAt: (x: number, y: number) => void;
+  moveBlock: (placement: Placement) => void;
 };
 
 const baseLevels = [tutorialLevel, ensembleLevel];
@@ -73,7 +73,7 @@ function buildRandomLevel(serial: number) {
 /** Central Zustand store for game state, placement state, and audio mix controls. */
 export const useGameStore = create<GameState>((set, get) => {
   const initialLevel = baseLevels[0];
-  const initialPlacements: Placement[] = [];
+  const initialPlacements = getInitialPlacements(initialLevel);
 
   return {
     levels: baseLevels,
@@ -92,10 +92,11 @@ export const useGameStore = create<GameState>((set, get) => {
     },
     setActiveLevel: (levelId) => {
       const nextLevel = getLevelById(get().levels, levelId);
-      const placements: Placement[] = [];
+      const placements = getInitialPlacements(nextLevel);
       set({
         activeLevelId: nextLevel.id,
         placements,
+        draggingPieceId: undefined,
         draggingBlockId: undefined,
         draggingRotation: 0,
         dragPointer: undefined,
@@ -110,13 +111,14 @@ export const useGameStore = create<GameState>((set, get) => {
       const serial = previousSerial + 1;
       const nextLevel = buildRandomLevel(serial);
       const retainedLevels = get().levels.filter((level) => level.id !== get().generatedLevelId);
-      const placements: Placement[] = [];
+      const placements = getInitialPlacements(nextLevel);
 
       set({
         levels: [...retainedLevels, nextLevel],
         generatedLevelId: nextLevel.id,
         activeLevelId: nextLevel.id,
         placements,
+        draggingPieceId: undefined,
         draggingBlockId: undefined,
         draggingRotation: 0,
         dragPointer: undefined,
@@ -129,6 +131,7 @@ export const useGameStore = create<GameState>((set, get) => {
       const placements = level.referenceSolution ?? solveLevel(level).placements;
       set({
         placements,
+        draggingPieceId: undefined,
         draggingBlockId: undefined,
         draggingRotation: 0,
         dragPointer: undefined,
@@ -164,8 +167,9 @@ export const useGameStore = create<GameState>((set, get) => {
           },
         },
       })),
-    startDrag: (blockId, pointer, rotation = 0) =>
+    startDrag: (pieceId, blockId, pointer, rotation = 0) =>
       set({
+        draggingPieceId: pieceId,
         draggingBlockId: blockId,
         draggingRotation: rotation,
         dragPointer: pointer,
@@ -177,48 +181,28 @@ export const useGameStore = create<GameState>((set, get) => {
       })),
     endDrag: () =>
       set({
+        draggingPieceId: undefined,
         draggingBlockId: undefined,
         dragPointer: undefined,
         draggingRotation: 0,
       }),
     resetPlacements: () => {
       const level = getLevelById(get().levels, get().activeLevelId);
-      const placements: Placement[] = [];
+      const placements = getInitialPlacements(level);
       set({
         placements,
         simulation: computeSimulation(level, placements),
       });
     },
-    placeBlock: (placement) => {
+    moveBlock: (placement) => {
       const level = getLevelById(get().levels, get().activeLevelId);
-      const placements = [...get().placements, placement];
+      const placements = get().placements.map((current) =>
+        current.pieceId === placement.pieceId ? placement : current,
+      );
       const validation = validatePlacements(level, placements);
       if (!validation.valid) {
         return;
       }
-      set({
-        placements,
-        simulation: computeSimulation(level, placements),
-      });
-    },
-    removePlacementAt: (x, y) => {
-      const level = getLevelById(get().levels, get().activeLevelId);
-      const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
-      const placements = get().placements.filter((placement) => {
-        const block = blockMap.get(placement.blockId);
-        if (!block) {
-          return true;
-        }
-
-        const width = placement.rotation === 90 ? block.height : block.width;
-        const height = placement.rotation === 90 ? block.width : block.height;
-        return !(
-          x >= placement.origin.x &&
-          x < placement.origin.x + width &&
-          y >= placement.origin.y &&
-          y < placement.origin.y + height
-        );
-      });
       set({
         placements,
         simulation: computeSimulation(level, placements),

@@ -1,8 +1,9 @@
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { defineLevel } from "../engine/levelDsl";
 import { defaultAnimalModelRegistry } from "../assets/modelAssets";
-import type { AnimalDefinition, LevelDefinition, Placement, PlaceableBlock, Vec2 } from "../types";
+import type { AnimalDefinition, LevelDefinition, Vec2 } from "../types";
 import { evaluatePlacements } from "./judge";
+import { materializeLevelLayout } from "./levelBlockLayout";
 import { sampleAnimalPathVisits } from "./utils";
 
 const generatedAnimalTypes = ["fox", "dog", "bee", "tiger", "parrot", "bunny"];
@@ -50,7 +51,8 @@ export function generateLevelFromPaths(id: string, options: PathFirstGenerationO
   const animals = buildAnimals(loopBeats, animalCount, rng);
   const cellStats = buildCellStats(animals, loopBeats);
   const placementDrafts = buildStructuredPlacements(cellStats, animals, loopBeats, rng);
-  const { inventory, placements } = buildInventoryAndPlacements(placementDrafts);
+  const blockDrafts = buildBlockDrafts(placementDrafts);
+  const layout = materializeLevelLayout(animals, blockDrafts, { rng });
 
   let level = defineLevel({
     id,
@@ -58,24 +60,16 @@ export function generateLevelFromPaths(id: string, options: PathFirstGenerationO
     description: "Auto-generated path-first puzzle",
     bpm: 112,
     loopBeats,
-    board: { width: 1, height: 1 },
-    animals,
-    inventory,
+    board: layout.board,
+    animals: layout.animals,
+    blocks: layout.blocks,
     targetRhythm: [],
     judge: { beatTolerance: 0.12 },
     models: defaultAnimalModelRegistry,
-    referenceSolution: placements,
+    referenceSolution: layout.referenceSolution,
   });
 
-  const normalized = normalizeGeneratedLayout(level.animals, placements, inventory);
-  level = defineLevel({
-    ...level,
-    board: normalized.board,
-    animals: normalized.animals,
-    referenceSolution: normalized.placements,
-  });
-
-  const simulation = evaluatePlacements(level, normalized.placements);
+  const simulation = evaluatePlacements(level, layout.referenceSolution);
   const targetRhythm = simulation.producedTriggers
     .sort((left, right) => left.beat - right.beat || left.id.localeCompare(right.id))
     .map((trigger, index) => ({
@@ -86,10 +80,12 @@ export function generateLevelFromPaths(id: string, options: PathFirstGenerationO
       velocity: Math.min(1.2, 0.6 + trigger.weight * 0.3),
     }));
 
-  return defineLevel({
+  level = defineLevel({
     ...level,
     targetRhythm,
   });
+
+  return level;
 }
 
 /** Builds several shared-space animal loops with mixed sizes and partial overlap. */
@@ -153,7 +149,9 @@ function buildStructuredPlacements(
   }
 
   if (!selected.some((entry) => entry.width * entry.height === 1)) {
-    const precise = candidates.find((entry) => entry.width === 1 && entry.height === 1 && !selected.some((picked) => rectanglesOverlap(picked, entry)));
+    const precise = candidates.find(
+      (entry) => entry.width === 1 && entry.height === 1 && !selected.some((picked) => rectanglesOverlap(picked, entry)),
+    );
     if (precise) {
       selected.push(precise);
     }
@@ -174,44 +172,20 @@ function buildStructuredPlacements(
   return pruneRectangles(selected, animals, loopBeats);
 }
 
-/** Builds inventory block definitions and the matching reference placements from rectangle drafts. */
-function buildInventoryAndPlacements(rectangles: RectanglePlacementDraft[]) {
-  const grouped = new Map<string, { draft: RectanglePlacementDraft; quantity: number }>();
-
-  for (const draft of rectangles) {
-    const id = `${draft.timbre}-${draft.width}x${draft.height}`;
-    const existing = grouped.get(id);
-    if (existing) {
-      existing.quantity += 1;
-      continue;
-    }
-
-    grouped.set(id, { draft, quantity: 1 });
-  }
-
-  const inventory: PlaceableBlock[] = [...grouped.entries()].map(([id, entry]) => ({
-    id,
-    name: `${entry.draft.timbre} ${entry.draft.width}x${entry.draft.height}`,
-    width: entry.draft.width,
-    height: entry.draft.height,
-    timbre: entry.draft.timbre,
-    quantity: entry.quantity,
+/** Expands rectangle drafts into concrete movable block instances. */
+function buildBlockDrafts(rectangles: RectanglePlacementDraft[]) {
+  return rectangles.map((draft, index) => ({
+    blockId: `${draft.timbre}-${draft.width}x${draft.height}`,
+    name: `${draft.timbre} ${draft.width}x${draft.height}`,
+    width: draft.width,
+    height: draft.height,
+    timbre: draft.timbre,
     canRotate: true,
-    color: timbrePalette[entry.draft.timbre],
-  }));
-
-  const usage = new Map<string, number>();
-  const placements: Placement[] = rectangles.map((draft) => {
-    const id = `${draft.timbre}-${draft.width}x${draft.height}`;
-    usage.set(id, (usage.get(id) ?? 0) + 1);
-    return {
-      blockId: id,
-      origin: draft.origin,
-      rotation: 0,
-    };
-  });
-
-  return { inventory, placements };
+    color: timbrePalette[draft.timbre],
+    solutionOrigin: draft.origin,
+    solutionRotation: 0 as const,
+    sortIndex: index,
+  })).sort((left, right) => left.sortIndex - right.sortIndex).map(({ sortIndex: _sortIndex, ...draft }) => draft);
 }
 
 /** Aggregates all animal visits by board cell and scores them for compact, shared block placement. */
@@ -315,7 +289,6 @@ function enumerateCandidateRectangles(
             const singleSparsePenalty = area > 1 && stats.length === 1 ? 3.5 : 0;
             const emptyPenalty = (area - stats.length) * 0.25;
             const denseClusterPenalty = stats.length >= 3 && averagePairDistance(stats.map((entry) => entry.cell)) < 1.35 ? 1.35 : 0;
-            const giantPenalty = area >= 9 ? 2.8 : area >= 6 ? 0.8 : 0;
             const score =
               totalScore +
               sharedBonus +
@@ -323,8 +296,7 @@ function enumerateCandidateRectangles(
               sizeBonus -
               singleSparsePenalty -
               emptyPenalty -
-              denseClusterPenalty -
-              giantPenalty +
+              denseClusterPenalty +
               rng() * 0.05;
             if (score <= 0.2) {
               continue;
@@ -535,22 +507,22 @@ function pruneRectangles(rectangles: RectanglePlacementDraft[], animals: AnimalD
   const drafts = [...rectangles];
   const maxNotes = Math.max(6, Math.round(loopBeats * 1.25));
   while (drafts.length > 1) {
-    const { inventory, placements } = buildInventoryAndPlacements(drafts);
+    const layout = materializeLevelLayout(animals, buildBlockDrafts(drafts));
     const level = defineLevel({
       id: "prune-check",
       name: "Prune Check",
       description: "Temporary generation check",
       bpm: 112,
       loopBeats,
-      board: { width: 32, height: 32 },
-      animals,
-      inventory,
+      board: layout.board,
+      animals: layout.animals,
+      blocks: layout.blocks,
       targetRhythm: [],
       judge: { beatTolerance: 0.12 },
       models: defaultAnimalModelRegistry,
-      referenceSolution: placements,
+      referenceSolution: layout.referenceSolution,
     });
-    const simulation = evaluatePlacements(level, placements);
+    const simulation = evaluatePlacements(level, layout.referenceSolution);
     const noteCount = simulation.producedTriggers.length;
     const rhythmPenalty = evaluateRhythmDistribution(simulation.producedTriggers.map((trigger) => trigger.beat), loopBeats);
     if (noteCount <= maxNotes && rhythmPenalty <= 2.35) {
@@ -594,8 +566,7 @@ function rectangleRemovalScore(rectangle: RectanglePlacementDraft, animals: Anim
   const area = rectangle.width * rectangle.height;
   const localPenalty = evaluateRectangleDensity(rectangle, animals, loopBeats);
   const elongatedBonus = rectangle.width === 1 || rectangle.height === 1 ? -1.2 : 0;
-  const giantPenalty = area >= 9 ? 4 : area >= 6 ? 1.5 : 0;
-  return area + giantPenalty + elongatedBonus + localPenalty;
+  return area + elongatedBonus + localPenalty;
 }
 
 /** Penalizes rectangles whose local traffic is already machine-gun dense or too temporally clustered. */
@@ -669,7 +640,7 @@ function buildRandomLoopPath(length: number, occupied: Set<string>, rng: () => n
       x: Math.round((rng() - 0.5) * 4) + (index % 2),
       y: Math.round((rng() - 0.5) * 4) - (index % 3),
     };
-    const path = searchLoopPath(length, start, occupied, radius + attempt % 3, rng);
+    const path = searchLoopPath(length, start, occupied, radius + (attempt % 3), rng);
     if (path) {
       return path;
     }
@@ -762,73 +733,6 @@ function buildFallbackRectangle(length: number, index: number) {
   }
 
   return points.slice(0, length);
-}
-
-/** Packs generated geometry into the smallest positive board rectangle that still contains routes and solved blocks. */
-function normalizeGeneratedLayout(animals: AnimalDefinition[], placements: Placement[], inventory: PlaceableBlock[]) {
-  const inventoryById = new Map(inventory.map((block) => [block.id, block]));
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-
-  for (const animal of animals) {
-    for (const point of animal.path.waypoints) {
-      minX = Math.min(minX, point.x);
-      minY = Math.min(minY, point.y);
-      maxX = Math.max(maxX, point.x);
-      maxY = Math.max(maxY, point.y);
-    }
-  }
-
-  for (const placement of placements) {
-    const block = inventoryById.get(placement.blockId);
-    if (!block) {
-      continue;
-    }
-
-    const width = placement.rotation === 90 ? block.height : block.width;
-    const height = placement.rotation === 90 ? block.width : block.height;
-    minX = Math.min(minX, placement.origin.x);
-    minY = Math.min(minY, placement.origin.y);
-    maxX = Math.max(maxX, placement.origin.x + width - 1);
-    maxY = Math.max(maxY, placement.origin.y + height - 1);
-  }
-
-  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-    return {
-      board: { width: 1, height: 1 },
-      animals,
-      placements,
-    };
-  }
-
-  const shiftX = -minX;
-  const shiftY = -minY;
-
-  return {
-    board: {
-      width: maxX - minX + 1,
-      height: maxY - minY + 1,
-    },
-    animals: animals.map((animal) => ({
-      ...animal,
-      path: {
-        ...animal.path,
-        waypoints: animal.path.waypoints.map((point) => ({
-          x: point.x + shiftX,
-          y: point.y + shiftY,
-        })),
-      },
-    })),
-    placements: placements.map((placement) => ({
-      ...placement,
-      origin: {
-        x: placement.origin.x + shiftX,
-        y: placement.origin.y + shiftY,
-      },
-    })),
-  };
 }
 
 /** Computes Manhattan distance on the board grid. */

@@ -1,11 +1,11 @@
-import type { LevelDefinition, Placement, PlaceableBlock, SolveResult, Vec2 } from "../types";
+import type { LevelBlock, LevelDefinition, Placement, SolveResult, Vec2 } from "../types";
 import { simulateLevel } from "./judge";
 import { rotateDimensions, validatePlacements } from "./utils";
 
 type CandidatePlacement = Placement;
 
-/** Enumerates all in-bounds placements for a single inventory block. */
-function enumeratePlacementsForBlock(level: LevelDefinition, block: PlaceableBlock): CandidatePlacement[] {
+/** Enumerates every in-bounds placement for one concrete block instance. */
+function enumeratePlacementsForBlock(level: LevelDefinition, block: LevelBlock): CandidatePlacement[] {
   const rotations: Placement["rotation"][] = block.canRotate === false ? [0] : [0, 90];
   const candidates: CandidatePlacement[] = [];
 
@@ -14,7 +14,8 @@ function enumeratePlacementsForBlock(level: LevelDefinition, block: PlaceableBlo
     for (let y = 0; y <= level.board.height - height; y += 1) {
       for (let x = 0; x <= level.board.width - width; x += 1) {
         candidates.push({
-          blockId: block.id,
+          blockId: block.blockId,
+          pieceId: block.pieceId,
           origin: { x, y },
           rotation,
         });
@@ -25,16 +26,16 @@ function enumeratePlacementsForBlock(level: LevelDefinition, block: PlaceableBlo
   return candidates;
 }
 
-/** Orders blocks so larger pieces are searched earlier. */
+/** Orders concrete block instances so larger footprints are searched first. */
 function sortBlocksForSearch(level: LevelDefinition) {
-  return [...level.inventory].sort((left, right) => {
+  return [...level.blocks].sort((left, right) => {
     const leftArea = left.width * left.height;
     const rightArea = right.width * right.height;
-    return rightArea - leftArea || left.id.localeCompare(right.id);
+    return rightArea - leftArea || left.pieceId.localeCompare(right.pieceId);
   });
 }
 
-/** Searches for a placement set that solves the given level. */
+/** Searches for a solved arrangement of all movable block instances. */
 export function solveLevel(level: LevelDefinition): SolveResult {
   if (level.referenceSolution) {
     const simulation = simulateLevel(level, level.referenceSolution);
@@ -52,12 +53,12 @@ export function solveLevel(level: LevelDefinition): SolveResult {
 
   const blocks = sortBlocksForSearch(level);
   const candidates = new Map<string, CandidatePlacement[]>(
-    blocks.map((block) => [block.id, enumeratePlacementsForBlock(level, block)]),
+    blocks.map((block) => [block.pieceId, enumeratePlacementsForBlock(level, block)]),
   );
   let exploredStates = 0;
   const best = { score: -1, placements: [] as Placement[] };
 
-  /** Explores block placement combinations depth-first until a solution is found. */
+  /** Explores concrete block arrangements depth-first until a valid full solution is found. */
   function search(
     index: number,
     placements: Placement[],
@@ -70,7 +71,7 @@ export function solveLevel(level: LevelDefinition): SolveResult {
     }
 
     const simulation = simulateLevel(level, placements);
-    if (simulation.solved) {
+    if (simulation.solved && placements.length === blocks.length) {
       return { placements: [...placements], simulation };
     }
 
@@ -84,22 +85,12 @@ export function solveLevel(level: LevelDefinition): SolveResult {
     }
 
     const block = blocks[index];
-    const blockCandidates = candidates.get(block.id) ?? [];
+    const blockCandidates = candidates.get(block.pieceId) ?? [];
 
-    const skip: { placements: Placement[]; simulation: ReturnType<typeof simulateLevel> } | undefined =
-      search(index + 1, placements);
-    if (skip) {
-      return skip;
-    }
-
-    for (let count = 1; count <= block.quantity; count += 1) {
-      const partialPlacements = choosePlacements(blockCandidates, count);
-      for (const choice of partialPlacements) {
-        const result: { placements: Placement[]; simulation: ReturnType<typeof simulateLevel> } | undefined =
-          search(index + 1, [...placements, ...choice]);
-        if (result) {
-          return result;
-        }
+    for (const candidate of blockCandidates) {
+      const result = search(index + 1, [...placements, candidate]);
+      if (result) {
+        return result;
       }
     }
 
@@ -122,29 +113,13 @@ export function solveLevel(level: LevelDefinition): SolveResult {
   };
 }
 
-/** Produces k-combinations from an item list. */
-function choosePlacements<T>(items: T[], count: number, start = 0, current: T[] = [], output: T[][] = []) {
-  if (current.length === count) {
-    output.push([...current]);
-    return output;
-  }
-
-  for (let index = start; index < items.length; index += 1) {
-    current.push(items[index]);
-    choosePlacements(items, count, index + 1, current, output);
-    current.pop();
-  }
-
-  return output;
-}
-
 /** Converts placements into a set of occupied board cell keys. */
-export function placementsToCellSet(placements: Placement[], inventory: PlaceableBlock[]) {
-  const blockMap = new Map(inventory.map((block) => [block.id, block]));
+export function placementsToCellSet(placements: Placement[], blocks: LevelBlock[]) {
+  const blockMap = new Map(blocks.map((block) => [block.pieceId, block]));
   const cells = new Set<string>();
 
   for (const placement of placements) {
-    const block = blockMap.get(placement.blockId);
+    const block = blockMap.get(placement.pieceId);
     if (!block) {
       continue;
     }

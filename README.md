@@ -2,12 +2,12 @@
 
 AnimalGroove is a rhythm puzzle game built with `Vite + React + TypeScript + Three.js`.
 
-Players drag percussion blocks onto a grid-based field. Animals move along looping paths, and when they step on placed blocks, those blocks trigger notes. The goal is to arrange the blocks so the generated rhythm matches the target groove.
+Players reshape a grid-based field by moving existing percussion blocks. Animals move along looping paths, and when they step on blocks, those blocks trigger notes. The goal is to modify the terrain so the generated rhythm matches the target groove.
 
 ## Current Features
 
 - Fullscreen Three.js board with floating HUD
-- Scene-native drag and drop block placement
+- Scene-native drag and drop block movement
 - Closed-loop jumping animal motion
 - Global animal profiles with per-species weight, movement speed, and placeholder effect tags
 - Per-note rhythm judging
@@ -17,10 +17,8 @@ Players drag percussion blocks onto a grid-based field. Animals move along loopi
 
 ## Controls
 
-- Drag blocks from the reserve ring onto the board
-- Drag placed blocks to move them
+- Drag placed blocks to move them around the board
 - Press `R` while dragging to rotate
-- Right click a placed block to remove it
 - Drag empty space to pan the camera
 - Right drag empty space to orbit the camera
 - Use the mouse wheel to zoom

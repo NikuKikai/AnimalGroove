@@ -12,7 +12,6 @@ export type ModelAssetEntry = {
 
 export type BlockTileModelPaths = {
   grass: ModelAssetEntry;
-  inventory: ModelAssetEntry;
   pathEnd: ModelAssetEntry;
   pathStraight: ModelAssetEntry;
   pathCorner: ModelAssetEntry;
@@ -65,7 +64,6 @@ export const defaultAnimalModelRegistry: ModelRegistry = {
 /** Canonical block tile model paths defined by docs/spec.md. */
 export const blockTileModelPaths: BlockTileModelPaths = {
   grass: defineModelAsset("Blocks", "ground_grass.glb"),
-  inventory: defineModelAsset("Blocks", "ground_pathOpen.glb"),
   pathEnd: defineModelAsset("Blocks", "ground_pathEndClosed.glb"),
   pathStraight: defineModelAsset("Blocks", "ground_pathStraight.glb"),
   pathCorner: defineModelAsset("Blocks", "ground_pathCorner.glb"),

@@ -5,14 +5,6 @@ export type PreviewPlacement = {
   valid: boolean;
 };
 
-export type StashPiece = {
-  pieceId: string;
-  blockId: string;
-  rotation: 0 | 90;
-  worldX: number;
-  worldZ: number;
-};
-
 export type HitPulse = {
   id: string;
   beat: number;
@@ -20,6 +12,4 @@ export type HitPulse = {
   cell: { x: number; y: number };
 };
 
-export type SceneHit =
-  | { kind: "stash"; pieceId: string; blockId: string }
-  | { kind: "placement"; placement: Placement };
+export type SceneHit = { kind: "placement"; placement: Placement };
