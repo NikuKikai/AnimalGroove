@@ -1,5 +1,5 @@
 import { defineLevel } from "../game/engine/levelDsl";
-import { defaultModelRegistry } from "../game/engine/modelRegistry";
+import { defaultAnimalModelRegistry } from "../game/assets/modelAssets";
 import { generateGroove } from "../game/simulation";
 
 export const tutorialLevel = defineLevel({
@@ -58,7 +58,7 @@ export const tutorialLevel = defineLevel({
   judge: {
     beatTolerance: 0.12,
   },
-  models: defaultModelRegistry,
+  models: defaultAnimalModelRegistry,
   referenceSolution: [
     { blockId: "kick-single", origin: { x: 1, y: 1 }, rotation: 0 },
     { blockId: "kick-single", origin: { x: 3, y: 3 }, rotation: 0 },
@@ -162,7 +162,7 @@ export const ensembleLevel = defineLevel({
   judge: {
     beatTolerance: 0.16,
   },
-  models: defaultModelRegistry,
+  models: defaultAnimalModelRegistry,
   referenceSolution: [
     { blockId: "kick-tile", origin: { x: 1, y: 1 }, rotation: 0 },
     { blockId: "kick-tile", origin: { x: 5, y: 2 }, rotation: 0 },

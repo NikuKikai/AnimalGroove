@@ -1,6 +1,6 @@
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { defineLevel } from "../engine/levelDsl";
-import { defaultModelRegistry } from "../engine/modelRegistry";
+import { defaultAnimalModelRegistry } from "../assets/modelAssets";
 import type { AnimalDefinition, LevelDefinition, Placement, PlaceableBlock, Vec2 } from "../types";
 import { evaluatePlacements } from "./judge";
 import { sampleAnimalPathVisits } from "./utils";
@@ -63,7 +63,7 @@ export function generateLevelFromPaths(id: string, options: PathFirstGenerationO
     inventory,
     targetRhythm: [],
     judge: { beatTolerance: 0.12 },
-    models: defaultModelRegistry,
+    models: defaultAnimalModelRegistry,
     referenceSolution: placements,
   });
 
@@ -547,7 +547,7 @@ function pruneRectangles(rectangles: RectanglePlacementDraft[], animals: AnimalD
       inventory,
       targetRhythm: [],
       judge: { beatTolerance: 0.12 },
-      models: defaultModelRegistry,
+      models: defaultAnimalModelRegistry,
       referenceSolution: placements,
     });
     const simulation = evaluatePlacements(level, placements);

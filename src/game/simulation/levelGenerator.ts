@@ -1,6 +1,6 @@
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { defineLevel } from "../engine/levelDsl";
-import { defaultModelRegistry } from "../engine/modelRegistry";
+import { defaultAnimalModelRegistry } from "../assets/modelAssets";
 import type { AnimalDefinition, LevelDefinition, Placement, PlaceableBlock, RhythmEvent, Vec2 } from "../types";
 
 const generatedAnimalTypes = ["fox", "dog", "bee", "tiger", "parrot", "bunny"];
@@ -157,7 +157,7 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
     judge: {
       beatTolerance: 0.12,
     },
-    models: defaultModelRegistry,
+    models: defaultAnimalModelRegistry,
     referenceSolution: normalized.placements,
   });
 }

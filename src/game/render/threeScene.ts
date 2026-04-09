@@ -1,13 +1,19 @@
 import * as THREE from "three";
-import type { GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
+import { blockTileModelPaths, loadModelTemplate, preloadModelTemplates } from "../assets/modelAssets";
 import { getAnimalProfile } from "../engine/animalRegistry";
 import type { LevelDefinition, Placement } from "../types";
 import { placementInstanceKey } from "../simulation";
-import { applyPickData, createBlockMesh, createHitPulseMesh, getDisplayOffset } from "./sceneMeshes";
+import {
+  applyPickData,
+  createBlockModelMesh,
+  createHitPulseMesh,
+  createTiledAreaMesh,
+  getDisplayOffset,
+} from "./sceneMeshes";
 import { computePathOffset, normalizedBeatDelta, sampleAnimalPosition } from "./sceneMotion";
 import type { HitPulse, PreviewPlacement, SceneHit, StashPiece } from "./sceneTypes";
+import type { BlockTileTemplates } from "./sceneMeshes";
 
 export type { HitPulse, PreviewPlacement, SceneHit, StashPiece } from "./sceneTypes";
 
@@ -22,6 +28,8 @@ type SceneState = {
   previewSignature?: string;
   reserveMesh?: THREE.Mesh;
   boardMesh?: THREE.Mesh;
+  reserveTiles?: THREE.Object3D;
+  boardTiles?: THREE.Object3D;
   boardGrid?: THREE.LineSegments;
   reserveGrid?: THREE.LineSegments;
   iconTextureCache: Map<string, THREE.Texture>;
@@ -33,8 +41,6 @@ const pathPalette = ["#ffaf45", "#58c4dd", "#ffc857", "#ff7f7f", "#b291ff", "#7b
 export const RESERVE_MARGIN = 8;
 
 export class ThreeScene {
-  private static modelTemplateCache = new Map<string, Promise<THREE.Object3D>>();
-
   private loadVersion = 0;
 
   private scene = new THREE.Scene();
@@ -65,6 +71,10 @@ export class ThreeScene {
 
   private mountedElement?: HTMLDivElement;
 
+  private blockTiles?: BlockTileTemplates;
+
+  private currentBoardSize = { width: 8, height: 8 };
+
   private state: SceneState = {
     animalRoots: new Map(),
     animalFallbacks: new Map(),
@@ -81,29 +91,15 @@ export class ThreeScene {
     this.scene.background = new THREE.Color("#0f1718");
     this.updateCamera();
 
-    const ambientLight = new THREE.AmbientLight("#f3f0d6", 1.25);
-    const directionalLight = new THREE.DirectionalLight("#ffffff", 1.6);
+    const ambientLight = new THREE.AmbientLight("#ffffff", 1);
+    const directionalLight = new THREE.DirectionalLight("#ffffff", 3);
     directionalLight.position.set(6, 12, 4);
     this.scene.add(ambientLight, directionalLight);
   }
 
   /** Preloads unique model assets so later level switches can reuse them. */
   static async preloadModels(paths: string[], onProgress?: (progress: number) => void) {
-    const uniquePaths = [...new Set(paths)];
-    if (uniquePaths.length === 0) {
-      onProgress?.(1);
-      return;
-    }
-
-    let completed = 0;
-    onProgress?.(0);
-    await Promise.all(
-      uniquePaths.map(async (path) => {
-        await ThreeScene.loadModelTemplate(path);
-        completed += 1;
-        onProgress?.(completed / uniquePaths.length);
-      }),
-    );
+    await preloadModelTemplates(paths, onProgress);
   }
 
   /** Mounts the WebGL canvas into a host element. */
@@ -187,11 +183,12 @@ export class ThreeScene {
   async loadLevel(level: LevelDefinition, onProgress?: (progress: number) => void) {
     const version = ++this.loadVersion;
     this.clearDynamicLevel();
+    await this.ensureBlockTileTemplates((progress) => onProgress?.(progress * 0.18));
     this.configureBoard(level);
     this.fitCameraToBoard(level);
-    onProgress?.(0.2);
+    onProgress?.(0.22);
     this.addPaths(level);
-    onProgress?.(0.35);
+    onProgress?.(0.4);
     await this.addAnimals(level, version, onProgress);
   }
 
@@ -307,6 +304,8 @@ export class ThreeScene {
     this.removeObject(this.state.reserveGrid);
     this.removeObject(this.state.reserveMesh);
     this.removeObject(this.state.boardMesh);
+    this.removeObject(this.state.reserveTiles);
+    this.removeObject(this.state.boardTiles);
     for (const texture of this.state.iconTextureCache.values()) {
       texture.dispose();
     }
@@ -321,6 +320,8 @@ export class ThreeScene {
       previewSignature: undefined,
       reserveMesh: undefined,
       boardMesh: undefined,
+      reserveTiles: undefined,
+      boardTiles: undefined,
       boardGrid: undefined,
       reserveGrid: undefined,
       iconTextureCache: new Map(),
@@ -354,6 +355,31 @@ export class ThreeScene {
 
   /** Creates or updates the board meshes and grids for the active level. */
   private configureBoard(level: LevelDefinition) {
+    this.currentBoardSize = { width: level.board.width, height: level.board.height };
+    if (this.blockTiles) {
+      this.removeObject(this.state.boardTiles);
+      this.removeObject(this.state.reserveTiles);
+      this.state.boardTiles = createTiledAreaMesh(this.blockTiles.grass, level.board.width, level.board.height);
+      this.state.boardTiles.position.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
+      this.scene.add(this.state.boardTiles);
+
+      const reserveWidth = level.board.width + RESERVE_MARGIN * 2;
+      const reserveHeight = level.board.height + RESERVE_MARGIN * 2;
+      this.state.reserveTiles = createTiledAreaMesh(this.blockTiles.inventory, reserveWidth, reserveHeight, 0.96);
+      this.state.reserveTiles.position.set((level.board.width - 1) / 2, -0.04, (level.board.height - 1) / 2);
+      this.scene.add(this.state.reserveTiles);
+
+      this.removeObject(this.state.reserveMesh);
+      this.removeObject(this.state.boardMesh);
+      this.removeObject(this.state.boardGrid);
+      this.removeObject(this.state.reserveGrid);
+      this.state.reserveMesh = undefined;
+      this.state.boardMesh = undefined;
+      this.state.boardGrid = undefined;
+      this.state.reserveGrid = undefined;
+      return;
+    }
+
     const reserveWidth = level.board.width + RESERVE_MARGIN * 2;
     const reserveHeight = level.board.height + RESERVE_MARGIN * 2;
 
@@ -404,8 +430,8 @@ export class ThreeScene {
 
   /** Keeps the camera target inside a padded rectangle around the board. */
   private clampCameraTarget(level?: LevelDefinition) {
-    const boardWidth = level?.board.width ?? (this.state.boardMesh ? Math.round((this.state.boardMesh.geometry as THREE.BoxGeometry).parameters.width) : 8);
-    const boardHeight = level?.board.height ?? (this.state.boardMesh ? Math.round((this.state.boardMesh.geometry as THREE.BoxGeometry).parameters.depth) : 8);
+    const boardWidth = level?.board.width ?? this.currentBoardSize.width;
+    const boardHeight = level?.board.height ?? this.currentBoardSize.height;
     const padding = 3.5;
     this.orbitTarget.x = THREE.MathUtils.clamp(this.orbitTarget.x, -padding, boardWidth - 1 + padding);
     this.orbitTarget.z = THREE.MathUtils.clamp(this.orbitTarget.z, -padding, boardHeight - 1 + padding);
@@ -508,12 +534,12 @@ export class ThreeScene {
 
       const path = level.models[animal.animalType];
       if (!path) {
-        onProgress?.(0.35 + ((index + 1) / level.animals.length) * 0.65);
+        onProgress?.(0.4 + ((index + 1) / level.animals.length) * 0.6);
         continue;
       }
 
       try {
-        const template = await ThreeScene.loadModelTemplate(path);
+        const template = await loadModelTemplate(path);
         if (version !== this.loadVersion) {
           return;
         }
@@ -528,7 +554,7 @@ export class ThreeScene {
         fallback.visible = true;
       }
 
-      onProgress?.(0.35 + ((index + 1) / level.animals.length) * 0.65);
+      onProgress?.(0.4 + ((index + 1) / level.animals.length) * 0.6);
     }
   }
 
@@ -559,6 +585,10 @@ export class ThreeScene {
 
   /** Syncs placed block meshes with gameplay placements and hit states. */
   private updateBlocks(level: LevelDefinition, placements: Placement[], pressedPlacementIds: Set<string>) {
+    if (!this.blockTiles) {
+      return;
+    }
+
     const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
     const nextKeys = new Set<string>();
     for (const placement of placements) {
@@ -570,8 +600,16 @@ export class ThreeScene {
       const meshKey = placementKey(placement);
       nextKeys.add(meshKey);
       let mesh = this.state.blockMeshes.get(meshKey);
+      const expectedRenderMode = "model";
+      const needsRebuild = Boolean(mesh && mesh.userData.renderMode !== expectedRenderMode);
+      if (mesh && needsRebuild) {
+        this.disposeSceneObject(mesh);
+        this.state.blockMeshes.delete(meshKey);
+        mesh = undefined;
+      }
       if (!mesh) {
-        mesh = createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, placement.rotation);
+        mesh = createBlockModelMesh(this.blockTiles, block.timbre, block, placement.rotation);
+        mesh.userData.renderMode = expectedRenderMode;
         this.state.blockMeshes.set(meshKey, mesh);
         this.scene.add(mesh);
       }
@@ -636,6 +674,10 @@ export class ThreeScene {
 
   /** Syncs reserve-ring block meshes with the currently unused inventory. */
   private updateStash(level: LevelDefinition, stashPieces: StashPiece[]) {
+    if (!this.blockTiles) {
+      return;
+    }
+
     const blockMap = new Map(level.inventory.map((block) => [block.id, block]));
     const nextKeys = new Set<string>();
     for (const piece of stashPieces) {
@@ -647,8 +689,16 @@ export class ThreeScene {
       const meshKey = piece.pieceId;
       nextKeys.add(meshKey);
       let mesh = this.state.stashMeshes.get(meshKey);
+      const expectedRenderMode = "model";
+      const needsRebuild = Boolean(mesh && mesh.userData.renderMode !== expectedRenderMode);
+      if (mesh && needsRebuild) {
+        this.disposeSceneObject(mesh);
+        this.state.stashMeshes.delete(meshKey);
+        mesh = undefined;
+      }
       if (!mesh) {
-        mesh = createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, piece.rotation, 0.92);
+        mesh = createBlockModelMesh(this.blockTiles, block.timbre, block, piece.rotation, 0.92);
+        mesh.userData.renderMode = expectedRenderMode;
         this.state.stashMeshes.set(meshKey, mesh);
         this.scene.add(mesh);
       }
@@ -695,14 +745,10 @@ export class ThreeScene {
       if (mesh) {
         this.disposeSceneObject(mesh);
       }
-      mesh = createBlockMesh(
-        this.state.iconTextureCache,
-        block.timbre,
-        preview.valid ? block.color : "#ff5f57",
-        block,
-        preview.placement.rotation,
-        0.55,
-      );
+      if (!this.blockTiles) {
+        return;
+      }
+      mesh = createBlockModelMesh(this.blockTiles, block.timbre, block, preview.placement.rotation, 0.55, !preview.valid);
       this.state.previewMesh = mesh;
       this.state.previewSignature = previewSignature;
       this.scene.add(mesh);
@@ -744,17 +790,37 @@ export class ThreeScene {
     });
   }
 
-  /** Loads and caches a model template keyed by asset path. */
-  private static loadModelTemplate(path: string) {
-    const cached = ThreeScene.modelTemplateCache.get(path);
-    if (cached) {
-      return cached;
-    }
+  /** Loads all block tile templates defined in docs/spec.md from the shared asset registry. */
+  private async ensureBlockTileTemplates(onProgress?: (progress: number) => void) {
+    const entries = Object.entries(blockTileModelPaths) as Array<[keyof typeof blockTileModelPaths, string]>;
+    const loaded = await Promise.all(
+      entries.map(async ([key, path], index) => {
+        const template = await loadModelTemplate(path);
+        onProgress?.((index + 1) / entries.length);
+        return [key, this.normalizeBlockTileTemplate(template)] as const;
+      }),
+    );
+    this.blockTiles = Object.fromEntries(loaded) as BlockTileTemplates;
+  }
 
-    const loader = new GLTFLoader();
-    const pending = loader.loadAsync(path).then((gltf: GLTF) => gltf.scene);
-    ThreeScene.modelTemplateCache.set(path, pending);
-    return pending;
+  /** Normalizes one tile template so each model occupies roughly one cell, is centered, and sits on y=0. */
+  private normalizeBlockTileTemplate(template: THREE.Object3D) {
+    const normalized = template.clone(true);
+    const initialBounds = new THREE.Box3().setFromObject(normalized);
+    const initialSize = new THREE.Vector3();
+    initialBounds.getSize(initialSize);
+    const dominantXZ = Math.max(initialSize.x, initialSize.z, 1e-6);
+    const uniformScale = 1 / dominantXZ;
+    normalized.scale.multiplyScalar(uniformScale);
+
+    const bounds = new THREE.Box3().setFromObject(normalized);
+    const center = new THREE.Vector3();
+    bounds.getCenter(center);
+    normalized.position.x -= center.x;
+    normalized.position.z -= center.z;
+    normalized.position.y -= bounds.min.y;
+
+    return normalized;
   }
 }
 

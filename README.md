@@ -68,6 +68,7 @@ npm run generate-level-paths
 ## Project Structure
 
 - `src/`: runtime game code, UI, rendering, simulation
+- `src/game/assets/`: canonical 3D asset paths, shared registries, and cached model loading helpers
 - `public/3Dmodels/Animals/`: animal model assets used by the game
 - `scripts/`: CLI utilities for groove / level generation and solving
 - `docs/level-generation.md`: notes on groove-first vs path-first generation
@@ -78,7 +79,7 @@ npm run generate-level-paths
 
 The project is configured for GitHub Pages through GitHub Actions.
 
-Static model assets are served from `public/3Dmodels`, and model URLs are kept relative so Pages subpath deployment works correctly.
+Static model assets are served from `public/3Dmodels`, and model URLs are kept relative so Pages subpath deployment works correctly. Runtime code should reference them through the shared asset layer in `src/game/assets/`, rather than hardcoding paths inside scene or engine modules.
 
 ## Acknowledgements
 
