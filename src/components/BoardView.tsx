@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioEngine } from "../game/audio/audioEngine";
 import { Transport } from "../game/engine/transport";
-import type { PreviewPlacement, StashPiece } from "../game/render/threeScene";
+import type { HitPulse, PreviewPlacement, StashPiece } from "../game/render/threeScene";
 import { placementKey, RESERVE_MARGIN, ThreeScene } from "../game/render/threeScene";
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 import { validatePlacements } from "../game/simulation";
@@ -40,6 +40,8 @@ export function BoardView() {
   const lastBeatRef = useRef(0);
   const audioReadyRef = useRef(false);
   const audioTriggerRef = useRef(new Set<string>());
+  const pulseMapRef = useRef(new Map<string, HitPulse>());
+  const hitPulsesRef = useRef<HitPulse[]>([]);
   const loadRequestRef = useRef(0);
 
   const [preview, setPreview] = useState<PreviewPlacement | undefined>(undefined);
@@ -108,6 +110,7 @@ export function BoardView() {
         useGameStore.getState().showPaths,
         buildStashPieces(activeLevel, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
         pressedPlacementIdsRef.current,
+        hitPulsesRef.current,
         previewRef.current,
       );
     });
@@ -192,6 +195,7 @@ export function BoardView() {
         useGameStore.getState().showPaths,
         buildStashPieces(activeLevel, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
         pressedPlacementIdsRef.current,
+        hitPulsesRef.current,
         nextPreview,
       );
     };
@@ -342,6 +346,8 @@ export function BoardView() {
     transportRef.current?.reset();
     lastBeatRef.current = 0;
     audioTriggerRef.current.clear();
+    pulseMapRef.current.clear();
+    hitPulsesRef.current = [];
     previewRef.current = undefined;
     setPreview(undefined);
   }, [level]);
@@ -358,23 +364,23 @@ export function BoardView() {
 
   useEffect(() => {
     pressedPlacementIdsRef.current = pressedPlacementIds;
-    sceneRef.current?.update(level, currentBeat, placements, showPaths, stashPieces, pressedPlacementIds, preview);
+    sceneRef.current?.update(
+      level,
+      currentBeat,
+      placements,
+      showPaths,
+      stashPieces,
+      pressedPlacementIds,
+      hitPulsesRef.current,
+      preview,
+    );
   }, [currentBeat, level, placements, preview, pressedPlacementIds, showPaths, stashPieces]);
 
   useEffect(() => {
     if (currentBeat < lastBeatRef.current) {
       audioTriggerRef.current.clear();
-    }
-
-    if (!audioReadyRef.current) {
-      lastBeatRef.current = currentBeat;
-      return;
-    }
-
-    for (const note of simulation.targetNotes) {
-      if (crossedBeat(lastBeatRef.current, currentBeat, note.beat)) {
-        audioEngine.playReference(note, note.state);
-      }
+      pulseMapRef.current.clear();
+      hitPulsesRef.current = [];
     }
 
     for (const trigger of simulation.producedTriggers) {
@@ -388,10 +394,36 @@ export function BoardView() {
 
       audioTriggerRef.current.add(trigger.id);
       const matched = simulation.targetNotes.some((note) => note.matchedTriggerId === trigger.id);
-      audioEngine.playTrigger(trigger, matched);
+      pulseMapRef.current.set(trigger.id, {
+        id: trigger.id,
+        placementInstanceId: trigger.placementInstanceId,
+        beat: trigger.beat,
+        state: matched ? "matched" : "wrong",
+        cell: trigger.cell,
+      });
+      if (audioReadyRef.current) {
+        audioEngine.playTrigger(trigger, matched);
+      }
     }
+
+    const pulseDurationBeats = 0.52;
+    for (const [pulseId, pulse] of pulseMapRef.current) {
+      if (normalizedBeatDelta(currentBeat, pulse.beat, level.loopBeats) > pulseDurationBeats) {
+        pulseMapRef.current.delete(pulseId);
+      }
+    }
+    hitPulsesRef.current = [...pulseMapRef.current.values()];
+
+    if (audioReadyRef.current) {
+      for (const note of simulation.targetNotes) {
+        if (crossedBeat(lastBeatRef.current, currentBeat, note.beat)) {
+          audioEngine.playReference(note, note.state);
+        }
+      }
+    }
+
     lastBeatRef.current = currentBeat;
-  }, [currentBeat, simulation]);
+  }, [currentBeat, level.loopBeats, simulation]);
 
   return (
     <section className="board-shell">

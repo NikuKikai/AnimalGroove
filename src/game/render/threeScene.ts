@@ -19,6 +19,14 @@ export type StashPiece = {
   worldZ: number;
 };
 
+export type HitPulse = {
+  id: string;
+  placementInstanceId: string;
+  beat: number;
+  state: "matched" | "wrong";
+  cell: { x: number; y: number };
+};
+
 export type SceneHit =
   | { kind: "stash"; pieceId: string; blockId: string }
   | { kind: "placement"; placement: Placement };
@@ -33,6 +41,7 @@ type SceneState = {
   pathLines: THREE.Line[];
   blockMeshes: Map<string, THREE.Object3D>;
   stashMeshes: Map<string, THREE.Object3D>;
+  hitPulseMeshes: Map<string, THREE.Mesh>;
   previewMesh?: THREE.Object3D;
   previewSignature?: string;
   reserveMesh?: THREE.Mesh;
@@ -86,6 +95,7 @@ export class ThreeScene {
     pathLines: [],
     blockMeshes: new Map(),
     stashMeshes: new Map(),
+    hitPulseMeshes: new Map(),
     iconTextureCache: new Map(),
   };
 
@@ -217,10 +227,12 @@ export class ThreeScene {
     showPaths: boolean,
     stashPieces: StashPiece[],
     pressedPlacementIds: Set<string>,
+    hitPulses: HitPulse[],
     preview?: PreviewPlacement,
   ) {
     this.updateAnimals(level, beat);
     this.updateBlocks(level, placements, pressedPlacementIds);
+    this.updateHitPulses(level, beat, hitPulses);
     this.updateStash(level, stashPieces);
     this.updatePreview(level, preview);
     for (const pathLine of this.state.pathLines) {
@@ -328,6 +340,7 @@ export class ThreeScene {
       pathLines: [],
       blockMeshes: new Map(),
       stashMeshes: new Map(),
+      hitPulseMeshes: new Map(),
       previewMesh: undefined,
       previewSignature: undefined,
       reserveMesh: undefined,
@@ -346,6 +359,7 @@ export class ThreeScene {
       ...this.state.pathLines,
       ...this.state.blockMeshes.values(),
       ...this.state.stashMeshes.values(),
+      ...this.state.hitPulseMeshes.values(),
     ]) {
       this.disposeSceneObject(object);
     }
@@ -357,6 +371,7 @@ export class ThreeScene {
     this.state.pathLines = [];
     this.state.blockMeshes.clear();
     this.state.stashMeshes.clear();
+    this.state.hitPulseMeshes.clear();
     this.state.previewMesh = undefined;
     this.state.previewSignature = undefined;
   }
@@ -605,6 +620,41 @@ export class ThreeScene {
       }
       this.disposeSceneObject(mesh);
       this.state.blockMeshes.delete(meshKey);
+    }
+  }
+
+  /** Renders expanding hit rings below blocks for matched and wrong notes. */
+  private updateHitPulses(level: LevelDefinition, beat: number, hitPulses: HitPulse[]) {
+    const durationBeats = 0.52;
+    const nextKeys = new Set<string>();
+
+    for (const pulse of hitPulses) {
+      const age = normalizedBeatDelta(beat, pulse.beat, level.loopBeats);
+      if (age < 0 || age > durationBeats) {
+        continue;
+      }
+
+      nextKeys.add(pulse.id);
+      let effectMesh = this.state.hitPulseMeshes.get(pulse.id);
+      if (!effectMesh) {
+        effectMesh = createHitPulseMesh(pulse.state);
+        this.state.hitPulseMeshes.set(pulse.id, effectMesh);
+        this.scene.add(effectMesh);
+      }
+
+      const progress = Math.max(0, Math.min(1, age / durationBeats));
+      const material = effectMesh.material as THREE.MeshBasicMaterial;
+      material.opacity = (1 - progress) * (1 - progress) * 0.78;
+      effectMesh.scale.setScalar(0.45 + progress * 2.1);
+      effectMesh.position.set(pulse.cell.x, 0.02, pulse.cell.y);
+    }
+
+    for (const [pulseId, mesh] of this.state.hitPulseMeshes) {
+      if (nextKeys.has(pulseId)) {
+        continue;
+      }
+      this.disposeSceneObject(mesh);
+      this.state.hitPulseMeshes.delete(pulseId);
     }
   }
 
@@ -871,6 +921,7 @@ function drawDummyInstrumentIcon(context: CanvasRenderingContext2D, timbre: stri
       context.fillText(timbre[0]?.toUpperCase() ?? "?", 64, 64);
       break;
   }
+
 }
 
 /** Computes a small lateral offset so overlapping debug paths remain visually separable. */
@@ -927,4 +978,29 @@ function sampleAnimalPosition(
     y: THREE.MathUtils.lerp(current.y, next.y, localT),
     jumpHeight,
   };
+}
+
+/** Computes positive wrapped beat delta within one loop. */
+function normalizedBeatDelta(currentBeat: number, targetBeat: number, loopBeats: number) {
+  const raw = currentBeat - targetBeat;
+  return raw >= 0 ? raw : raw + loopBeats;
+}
+
+/** Creates one additive pulse ring mesh for block hit feedback. */
+function createHitPulseMesh(state: HitPulse["state"]) {
+  const color = state === "matched" ? "#1db65f" : "#d63b35";
+  const mesh = new THREE.Mesh(
+    new THREE.RingGeometry(0.3, 0.42, 40),
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.78,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    }),
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.renderOrder = 3;
+  return mesh;
 }
