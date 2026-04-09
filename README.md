@@ -68,7 +68,7 @@ npm run generate-level-paths
 ## Project Structure
 
 - `src/`: runtime game code, UI, rendering, simulation
-- `public/3Dmodels/`: animal model assets used by the game
+- `public/3Dmodels/Animals/`: animal model assets used by the game
 - `scripts/`: CLI utilities for groove / level generation and solving
 - `docs/level-generation.md`: notes on groove-first vs path-first generation
 - `test/`: simulation tests

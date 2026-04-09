@@ -1,8 +1,8 @@
 import type { ModelRegistry } from "../types";
 
-/** Builds a relative URL to a model asset under the public 3D model directory. */
+/** Builds a relative URL to a model asset under the public 3Dmodels/Animals directory. */
 function modelPath(filename: string) {
-  return `./3Dmodels/${filename}`;
+  return `./3Dmodels/Animals/${filename}`;
 }
 
 export const defaultModelRegistry: ModelRegistry = {
