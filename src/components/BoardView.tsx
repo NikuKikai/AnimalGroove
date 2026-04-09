@@ -67,10 +67,12 @@ export function BoardView() {
   const endDrag = useGameStore((state) => state.endDrag);
   const level = getActiveLevel({ activeLevelId, levels });
 
+  // Trigger: whenever the active level object changes. Purpose: keep async callbacks reading the latest level via ref.
   useEffect(() => {
     levelRef.current = level;
   }, [level]);
 
+  // Trigger: whenever HUD audio mix sliders/toggles change. Purpose: push the latest mix into the audio engine.
   useEffect(() => {
     audioEngine.setMix(audioMix);
   }, [audioMix]);
@@ -95,13 +97,16 @@ export function BoardView() {
     return pressed;
   }, [currentBeat, level, placements, simulation.producedTriggers]);
 
+  // Trigger: once on mount (plus stable callback identity changes). Purpose: create scene/transport and wire all input listeners.
   useEffect(() => {
+    // Scene bootstrap: construct Three.js scene and mount renderer into the host container.
     const scene = new ThreeScene();
     sceneRef.current = scene;
     if (mountRef.current) {
       scene.mount(mountRef.current);
     }
 
+    // Transport bootstrap: create beat clock and render on each transport tick.
     const transport = new Transport(level.bpm, level.loopBeats);
     transportRef.current = transport;
     const unsubscribe = transport.subscribe((beat) => {
@@ -121,6 +126,7 @@ export function BoardView() {
 
     const dom = scene.getDomElement();
 
+    // Audio unlock gate: Web Audio starts after first user gesture.
     const unlockAudio = async () => {
       if (!audioReadyRef.current) {
         await audioEngine.start();
@@ -128,6 +134,7 @@ export function BoardView() {
       }
     };
 
+    // Pointer down routing: choose between camera gesture, stash drag, or board block drag.
     const handlePointerDown = async (event: PointerEvent) => {
       await unlockAudio();
       if (event.button !== 0 && event.button !== 2) {
@@ -163,6 +170,7 @@ export function BoardView() {
       startDrag(hit.placement.blockId, { x: event.clientX, y: event.clientY }, hit.placement.rotation);
     };
 
+    // Pointer move: either update camera drag or update placement preview while dragging a block.
     const handlePointerMove = (event: PointerEvent) => {
       const state = useGameStore.getState();
       if (!state.draggingBlockId) {
@@ -204,6 +212,7 @@ export function BoardView() {
       );
     };
 
+    // Pointer up finalize: commit valid preview, or rollback to original block placement when needed.
     const handlePointerUp = () => {
       const state = useGameStore.getState();
       if (cameraSessionRef.current) {
@@ -228,6 +237,7 @@ export function BoardView() {
       endDrag();
     };
 
+    // Context menu: right click removes a placed block on the board (unless currently rotating camera).
     const handleContextMenu = (event: MouseEvent) => {
       event.preventDefault();
       if (cameraSessionRef.current?.mode === "rotate") {
@@ -240,11 +250,13 @@ export function BoardView() {
       }
     };
 
+    // Wheel zoom for camera orbit distance.
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
       scene.zoomCamera(event.deltaY);
     };
 
+    // Keyboard interaction: rotate active dragged block with R and refresh preview placement.
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "r" || !useGameStore.getState().draggingBlockId) {
         return;
@@ -280,8 +292,10 @@ export function BoardView() {
       previewRef.current = nextPreview;
     };
 
+    // Window resize keeps renderer/camera in sync with viewport size.
     const handleResize = () => scene.resize();
 
+    // Event wiring.
     window.addEventListener("pointerdown", unlockAudio);
     dom.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("pointermove", handlePointerMove);
@@ -291,8 +305,10 @@ export function BoardView() {
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("resize", handleResize);
 
+    // Start transport after scene/input setup is complete.
     transport.start();
 
+    // Cleanup: remove listeners and dispose scene/transport resources.
     return () => {
       unsubscribe();
       window.removeEventListener("pointerdown", unlockAudio);
@@ -308,6 +324,7 @@ export function BoardView() {
     };
   }, [endDrag, placeBlock, removePlacementAt, rotateDrag, setCurrentBeat, startDrag, updateDragPointer]);
 
+  // Trigger: whenever active level changes. Purpose: async-load level content, reset transport state, and clear transient caches.
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) {
@@ -355,6 +372,7 @@ export function BoardView() {
     setPreview(undefined);
   }, [level]);
 
+  // Trigger: whenever level list changes. Purpose: preload all referenced animal models for faster next level switch.
   useEffect(() => {
     const modelPaths = levels.flatMap((entry) =>
       entry.animals
@@ -365,6 +383,7 @@ export function BoardView() {
     void ThreeScene.preloadModels(modelPaths);
   }, [levels]);
 
+  // Trigger: on render-driving state updates (beat/placements/preview/path toggle). Purpose: draw the latest frame immediately.
   useEffect(() => {
     pressedPlacementIdsRef.current = pressedPlacementIds;
     sceneRef.current?.update(
@@ -379,6 +398,7 @@ export function BoardView() {
     );
   }, [currentBeat, level, placements, preview, pressedPlacementIds, showPaths, stashPieces]);
 
+  // Trigger: on beat/simulation updates. Purpose: emit audio and refresh per-animal pulse states from trigger/visit events.
   useEffect(() => {
     if (currentBeat < lastBeatRef.current) {
       audioTriggerRef.current.clear();
