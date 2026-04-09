@@ -16,7 +16,7 @@ type LoadingState = {
 };
 
 type DragSession =
-  | { source: "stash" }
+  | { source: "stash"; pieceId: string }
   | { source: "board"; originalPlacement: Placement };
 
 type CameraSession = {
@@ -44,6 +44,7 @@ export function BoardView() {
   const loadRequestRef = useRef(0);
 
   const [preview, setPreview] = useState<PreviewPlacement | undefined>(undefined);
+  const [draggingStashPieceId, setDraggingStashPieceId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState<LoadingState>({
     active: true,
     progress: 0,
@@ -77,7 +78,10 @@ export function BoardView() {
     audioEngine.setMix(audioMix);
   }, [audioMix]);
 
-  const stashPieces = useMemo(() => buildStashPieces(level, placements, draggingBlockId), [draggingBlockId, level, placements]);
+  const stashPieces = useMemo(
+    () => buildStashPieces(level, placements, draggingStashPieceId),
+    [draggingStashPieceId, level, placements],
+  );
   const animalVisits = useMemo(
     () => level.animals.flatMap((animal) => sampleAnimalPathVisits(animal, level.loopBeats)),
     [level],
@@ -117,7 +121,7 @@ export function BoardView() {
         beat,
         useGameStore.getState().placements,
         useGameStore.getState().showPaths,
-        buildStashPieces(activeLevel, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
+        buildStashPieces(activeLevel, useGameStore.getState().placements, draggingStashPieceIdRef.current),
         pressedPlacementIdsRef.current,
         [...pulseMapRef.current.values()],
         previewRef.current,
@@ -157,7 +161,9 @@ export function BoardView() {
       }
 
       if (hit.kind === "stash") {
-        dragSessionRef.current = { source: "stash" };
+        dragSessionRef.current = { source: "stash", pieceId: hit.pieceId };
+        draggingStashPieceIdRef.current = hit.pieceId;
+        setDraggingStashPieceId(hit.pieceId);
         startDrag(hit.blockId, { x: event.clientX, y: event.clientY }, 0);
         return;
       }
@@ -184,6 +190,9 @@ export function BoardView() {
       const activeLevel = levelRef.current;
       const cell = scene.getCellFromPointer(event.clientX, event.clientY, activeLevel, true);
       if (!cell) {
+        if (!previewRef.current) {
+          return;
+        }
         setPreview(undefined);
         previewRef.current = undefined;
         return;
@@ -198,6 +207,9 @@ export function BoardView() {
         placement: nextPlacement,
         valid: validatePlacements(activeLevel, [...useGameStore.getState().placements, nextPlacement]).valid,
       };
+      if (isSamePreview(previewRef.current, nextPreview)) {
+        return;
+      }
       setPreview(nextPreview);
       previewRef.current = nextPreview;
       scene.update(
@@ -205,7 +217,7 @@ export function BoardView() {
         useGameStore.getState().currentBeat,
         useGameStore.getState().placements,
         useGameStore.getState().showPaths,
-        buildStashPieces(activeLevel, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
+        buildStashPieces(activeLevel, useGameStore.getState().placements, draggingStashPieceIdRef.current),
         pressedPlacementIdsRef.current,
         [...pulseMapRef.current.values()],
         nextPreview,
@@ -232,6 +244,8 @@ export function BoardView() {
       }
 
       dragSessionRef.current = null;
+      draggingStashPieceIdRef.current = undefined;
+      setDraggingStashPieceId(undefined);
       previewRef.current = undefined;
       setPreview(undefined);
       endDrag();
@@ -369,6 +383,8 @@ export function BoardView() {
     audioTriggerRef.current.clear();
     pulseMapRef.current.clear();
     previewRef.current = undefined;
+    draggingStashPieceIdRef.current = undefined;
+    setDraggingStashPieceId(undefined);
     setPreview(undefined);
   }, [level]);
 
@@ -482,6 +498,7 @@ export function BoardView() {
 }
 
 const pressedPlacementIdsRef: { current: Set<string> } = { current: new Set<string>() };
+const draggingStashPieceIdRef: { current: string | undefined } = { current: undefined };
 
 /** Detects whether a looping playback cursor crossed a target beat this frame. */
 function crossedBeat(previous: number, current: number, target: number) {
@@ -500,18 +517,15 @@ function normalizedBeatDelta(currentBeat: number, targetBeat: number, loopBeats:
 }
 
 /** Builds stable reserve-ring pieces for any inventory blocks not currently in use. */
-function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: Placement[], draggingBlockId?: string): StashPiece[] {
+function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: Placement[], draggingPieceId?: string) {
   const usage = new Map<string, number>();
   for (const placement of placements) {
     usage.set(placement.blockId, (usage.get(placement.blockId) ?? 0) + 1);
   }
-  if (draggingBlockId) {
-    usage.set(draggingBlockId, (usage.get(draggingBlockId) ?? 0) + 1);
-  }
 
   const occupied = new Set<string>();
   const candidates = buildReserveCells(level.board.width, level.board.height);
-  return level.inventory.flatMap((block) => {
+  const allPieces = level.inventory.flatMap((block) => {
     const used = usage.get(block.id) ?? 0;
     const slots = Array.from({ length: block.quantity }, (_, index) => {
       const cell = findReserveOrigin(candidates, occupied, block.width, block.height);
@@ -524,8 +538,9 @@ function buildStashPieces(level: ReturnType<typeof getActiveLevel>, placements: 
       };
       return stashPiece;
     });
-    return slots.slice(Math.min(used, slots.length));
+    return slots.slice(0, Math.max(0, slots.length - used));
   });
+  return allPieces.filter((piece) => piece.pieceId !== draggingPieceId);
 }
 
 /** Enumerates the reserve-ring cells used to lay out loose inventory blocks. */
@@ -601,4 +616,19 @@ function buildOccupiedCellSet(level: ReturnType<typeof getActiveLevel>, placemen
     }
   }
   return occupied;
+}
+
+/** Returns whether two preview states represent the same discrete drag result. */
+function isSamePreview(left: PreviewPlacement | undefined, right: PreviewPlacement | undefined) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    left.valid === right.valid &&
+    left.placement.blockId === right.placement.blockId &&
+    left.placement.rotation === right.placement.rotation &&
+    left.placement.origin.x === right.placement.origin.x &&
+    left.placement.origin.y === right.placement.origin.y
+  );
 }

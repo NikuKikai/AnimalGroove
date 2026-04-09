@@ -36,8 +36,10 @@ export function createBlockMesh(
     new THREE.BoxGeometry(width - 0.08, 0.24, height - 0.08),
     new THREE.MeshStandardMaterial({
       color,
-      emissive: color,
-      emissiveIntensity: 0.18,
+      emissive: "#000000",
+      emissiveIntensity: 0,
+      roughness: 0.82,
+      metalness: 0.04,
       transparent: opacity < 1,
       opacity,
     }),
@@ -55,6 +57,7 @@ export function createBlockMesh(
   iconPlane.rotation.x = -Math.PI / 2;
   iconPlane.position.y = 0.125;
   group.add(iconPlane);
+  group.add(createPickProxy(width, height, 0.26));
 
   return group;
 }
@@ -66,12 +69,8 @@ export function createBlockModelMesh(
   block: { width: number; height: number },
   rotation: 0 | 90,
   opacity = 1,
-  invalid = false,
+  previewState: "none" | "valid" | "invalid" = "none",
 ) {
-  if (invalid) {
-    return createInvalidPreviewMesh(block, rotation, opacity);
-  }
-
   const normalizedTimbre = timbre.toLowerCase();
   const width = rotation === 90 ? block.height : block.width;
   const height = rotation === 90 ? block.width : block.height;
@@ -94,26 +93,16 @@ export function createBlockModelMesh(
     model.position.set(cell.x - offsetX, 0, cell.y - offsetY);
     model.rotation.y = THREE.MathUtils.degToRad(cell.rotationDeg);
     applyOpacity(model, opacity);
+    if (previewState === "valid") {
+      applyPreviewTint(model, "valid");
+    } else if (previewState === "invalid") {
+      applyPreviewTint(model, "invalid");
+    }
     group.add(model);
   }
+  group.add(createPickProxy(width, height, 0.12));
 
   return group;
-}
-
-/** Creates a lightweight red preview mesh used for invalid placement feedback. */
-function createInvalidPreviewMesh(block: { width: number; height: number }, rotation: 0 | 90, opacity: number) {
-  const width = rotation === 90 ? block.height : block.width;
-  const height = rotation === 90 ? block.width : block.height;
-  return new THREE.Mesh(
-    new THREE.BoxGeometry(width - 0.08, 0.24, height - 0.08),
-    new THREE.MeshStandardMaterial({
-      color: "#ff5f57",
-      emissive: "#ff5f57",
-      emissiveIntensity: 0.2,
-      transparent: opacity < 1,
-      opacity,
-    }),
-  );
 }
 
 /** Copies pick metadata onto a root object and all of its descendants. */
@@ -142,10 +131,11 @@ export function createHitPulseMesh(state: HitPulse["state"]) {
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.78,
+      opacity: 0.88,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
       side: THREE.DoubleSide,
+      toneMapped: false,
     }),
   );
   mesh.rotation.x = -Math.PI / 2;
@@ -162,6 +152,31 @@ export function createTiledAreaMesh(template: THREE.Object3D, width: number, hei
     for (let x = 0; x < width; x += 1) {
       const tile = cloneTemplate(template);
       tile.position.set(x - offsetX, 0, y - offsetY);
+      applyOpacity(tile, opacity);
+      group.add(tile);
+    }
+  }
+  return group;
+}
+
+/** Creates repeated 1x1 tile models over an area while skipping selected occupied cells. */
+export function createMaskedTiledAreaMesh(
+  template: THREE.Object3D,
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number,
+  excludedCells: Set<string>,
+  opacity = 1,
+) {
+  const group = new THREE.Group();
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      if (excludedCells.has(`${x},${y}`)) {
+        continue;
+      }
+      const tile = cloneTemplate(template);
+      tile.position.set(x, 0, y);
       applyOpacity(tile, opacity);
       group.add(tile);
     }
@@ -298,7 +313,21 @@ function buildBlockPattern(width: number, height: number): PatternCell[] {
 
 /** Clones one template model with full child hierarchy. */
 function cloneTemplate(template: THREE.Object3D) {
-  return template.clone(true);
+  const clone = template.clone(true);
+  clone.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.material) {
+      return;
+    }
+
+    if (Array.isArray(mesh.material)) {
+      mesh.material = mesh.material.map((material) => material.clone());
+      return;
+    }
+
+    mesh.material = mesh.material.clone();
+  });
+  return clone;
 }
 
 /** Applies transparency to every mesh material within a model hierarchy. */
@@ -321,4 +350,51 @@ function applyOpacity(root: THREE.Object3D, opacity: number) {
     material.transparent = opacity < 1;
     material.opacity = opacity;
   });
+}
+
+/** Applies a preview tint while preserving the original model silhouette. */
+function applyPreviewTint(root: THREE.Object3D, state: "valid" | "invalid") {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    const material = mesh.material;
+    if (!material) {
+      return;
+    }
+
+    if (Array.isArray(material)) {
+      for (const item of material) {
+        tintMaterial(item, state);
+      }
+      return;
+    }
+
+    tintMaterial(material, state);
+  });
+}
+
+/** Tints one material toward the preview palette. */
+function tintMaterial(material: THREE.Material, state: "valid" | "invalid") {
+  const standardMaterial = material as THREE.MeshStandardMaterial;
+  if ("color" in standardMaterial && standardMaterial.color) {
+    standardMaterial.color.lerp(new THREE.Color(state === "valid" ? "#ffffff" : "#ff5f57"), state === "valid" ? 0.42 : 0.72);
+  }
+  if ("emissive" in standardMaterial && standardMaterial.emissive) {
+    standardMaterial.emissive.set(state === "valid" ? "#cfd6db" : "#7a1410");
+    standardMaterial.emissiveIntensity = state === "valid" ? 0.16 : 0.2;
+  }
+}
+
+/** Creates an invisible raycast proxy that matches the block footprint more reliably than model geometry. */
+function createPickProxy(width: number, height: number, y: number) {
+  const proxy = new THREE.Mesh(
+    new THREE.BoxGeometry(Math.max(0.2, width - 0.02), 0.24, Math.max(0.2, height - 0.02)),
+    new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      colorWrite: false,
+    }),
+  );
+  proxy.position.y = y;
+  return proxy;
 }

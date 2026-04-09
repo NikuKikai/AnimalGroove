@@ -6,11 +6,12 @@ import type { LevelDefinition, Placement } from "../types";
 import { placementInstanceKey } from "../simulation";
 import {
   applyPickData,
+  createBlockMesh,
   createBlockModelMesh,
   createHitPulseMesh,
-  createTiledAreaMesh,
   getDisplayOffset,
 } from "./sceneMeshes";
+import { getBlockVisualKind } from "./blockVisuals";
 import { computePathOffset, normalizedBeatDelta, sampleAnimalPosition } from "./sceneMotion";
 import type { HitPulse, PreviewPlacement, SceneHit, StashPiece } from "./sceneTypes";
 import type { BlockTileTemplates } from "./sceneMeshes";
@@ -26,12 +27,9 @@ type SceneState = {
   hitPulseMeshes: Map<string, THREE.Mesh>;
   previewMesh?: THREE.Object3D;
   previewSignature?: string;
-  reserveMesh?: THREE.Mesh;
-  boardMesh?: THREE.Mesh;
-  reserveTiles?: THREE.Object3D;
-  boardTiles?: THREE.Object3D;
-  boardGrid?: THREE.LineSegments;
-  reserveGrid?: THREE.LineSegments;
+  terrainRoot?: THREE.Object3D;
+  terrainCells: Map<string, THREE.Object3D>;
+  terrainHiddenSignature?: string;
   iconTextureCache: Map<string, THREE.Texture>;
 };
 
@@ -82,6 +80,7 @@ export class ThreeScene {
     blockMeshes: new Map(),
     stashMeshes: new Map(),
     hitPulseMeshes: new Map(),
+    terrainCells: new Map(),
     iconTextureCache: new Map(),
   };
 
@@ -136,7 +135,7 @@ export class ThreeScene {
 
     if (this.activeCameraDrag.mode === "rotate") {
       this.orbitYaw += deltaX * 0.0035;
-      this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch - deltaY * 0.003, 0.35, 1.22);
+      this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch - deltaY * 0.003, 0.0, Math.PI / 2);
       this.updateCamera();
       return;
     }
@@ -204,6 +203,7 @@ export class ThreeScene {
     preview?: PreviewPlacement,
   ) {
     this.updateAnimals(level, beat);
+    this.updateTerrain(level, placements, stashPieces, preview);
     this.updateBlocks(level, placements, pressedPlacementIds);
     this.updateHitPulses(level, beat, hitPulses);
     this.updateStash(level, stashPieces);
@@ -300,12 +300,7 @@ export class ThreeScene {
   /** Clears both persistent and dynamic scene content. */
   private clearLevel() {
     this.clearDynamicLevel();
-    this.removeObject(this.state.boardGrid);
-    this.removeObject(this.state.reserveGrid);
-    this.removeObject(this.state.reserveMesh);
-    this.removeObject(this.state.boardMesh);
-    this.removeObject(this.state.reserveTiles);
-    this.removeObject(this.state.boardTiles);
+    this.removeObject(this.state.terrainRoot);
     for (const texture of this.state.iconTextureCache.values()) {
       texture.dispose();
     }
@@ -318,12 +313,9 @@ export class ThreeScene {
       hitPulseMeshes: new Map(),
       previewMesh: undefined,
       previewSignature: undefined,
-      reserveMesh: undefined,
-      boardMesh: undefined,
-      reserveTiles: undefined,
-      boardTiles: undefined,
-      boardGrid: undefined,
-      reserveGrid: undefined,
+      terrainRoot: undefined,
+      terrainCells: new Map(),
+      terrainHiddenSignature: undefined,
       iconTextureCache: new Map(),
     };
   }
@@ -353,71 +345,31 @@ export class ThreeScene {
     this.state.previewSignature = undefined;
   }
 
-  /** Creates or updates the board meshes and grids for the active level. */
+  /** Rebuilds the unified terrain grid for the active level. */
   private configureBoard(level: LevelDefinition) {
     this.currentBoardSize = { width: level.board.width, height: level.board.height };
-    if (this.blockTiles) {
-      this.removeObject(this.state.boardTiles);
-      this.removeObject(this.state.reserveTiles);
-      this.state.boardTiles = createTiledAreaMesh(this.blockTiles.grass, level.board.width, level.board.height);
-      this.state.boardTiles.position.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
-      this.scene.add(this.state.boardTiles);
+    this.removeObject(this.state.terrainRoot);
+    this.state.terrainCells.clear();
+    this.state.terrainHiddenSignature = undefined;
 
-      const reserveWidth = level.board.width + RESERVE_MARGIN * 2;
-      const reserveHeight = level.board.height + RESERVE_MARGIN * 2;
-      this.state.reserveTiles = createTiledAreaMesh(this.blockTiles.inventory, reserveWidth, reserveHeight, 0.96);
-      this.state.reserveTiles.position.set((level.board.width - 1) / 2, -0.04, (level.board.height - 1) / 2);
-      this.scene.add(this.state.reserveTiles);
-
-      this.removeObject(this.state.reserveMesh);
-      this.removeObject(this.state.boardMesh);
-      this.removeObject(this.state.boardGrid);
-      this.removeObject(this.state.reserveGrid);
-      this.state.reserveMesh = undefined;
-      this.state.boardMesh = undefined;
-      this.state.boardGrid = undefined;
-      this.state.reserveGrid = undefined;
+    if (!this.blockTiles) {
       return;
     }
 
-    const reserveWidth = level.board.width + RESERVE_MARGIN * 2;
-    const reserveHeight = level.board.height + RESERVE_MARGIN * 2;
-
-    if (!this.state.reserveMesh) {
-      this.state.reserveMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(reserveWidth, 0.12, reserveHeight),
-        new THREE.MeshStandardMaterial({ color: "#31424a", roughness: 0.9 }),
-      );
-      this.scene.add(this.state.reserveMesh);
-    } else {
-      this.state.reserveMesh.geometry.dispose();
-      this.state.reserveMesh.geometry = new THREE.BoxGeometry(reserveWidth, 0.12, reserveHeight);
+    const terrainRoot = new THREE.Group();
+    for (let y = -RESERVE_MARGIN; y <= level.board.height + RESERVE_MARGIN - 1; y += 1) {
+      for (let x = -RESERVE_MARGIN; x <= level.board.width + RESERVE_MARGIN - 1; x += 1) {
+        const inBoard = x >= 0 && x < level.board.width && y >= 0 && y < level.board.height;
+        const template = inBoard ? this.blockTiles.grass : this.blockTiles.inventory;
+        const cellMesh = template.clone(true);
+        cellMesh.position.set(x, inBoard ? 0 : 0.05, y);
+        terrainRoot.add(cellMesh);
+        this.state.terrainCells.set(`${x},${y}`, cellMesh);
+      }
     }
-    this.state.reserveMesh.position.set((level.board.width - 1) / 2, -0.18, (level.board.height - 1) / 2);
 
-    if (!this.state.boardMesh) {
-      this.state.boardMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(level.board.width, 0.2, level.board.height),
-        new THREE.MeshStandardMaterial({ color: "#20303a", roughness: 0.85 }),
-      );
-      this.scene.add(this.state.boardMesh);
-    } else {
-      this.state.boardMesh.geometry.dispose();
-      this.state.boardMesh.geometry = new THREE.BoxGeometry(level.board.width, 0.2, level.board.height);
-    }
-    this.state.boardMesh.position.set((level.board.width - 1) / 2, -0.1, (level.board.height - 1) / 2);
-
-    this.state.boardGrid = this.replaceGrid(
-      this.state.boardGrid,
-      -0.5,
-      level.board.width - 0.5,
-      -0.5,
-      level.board.height - 0.5,
-      "#6fa4a8",
-      0.95,
-    );
-    this.removeObject(this.state.reserveGrid);
-    this.state.reserveGrid = undefined;
+    this.state.terrainRoot = terrainRoot;
+    this.scene.add(terrainRoot);
   }
 
   /** Fits the orbit target and distance to the active board while keeping motion bounded. */
@@ -447,43 +399,6 @@ export class ThreeScene {
       this.orbitTarget.z + Math.sin(this.orbitYaw) * sinPitch * this.orbitDistance,
     );
     this.camera.lookAt(this.orbitTarget);
-  }
-
-  /** Creates or updates a line grid mesh for the given rectangular bounds. */
-  private replaceGrid(
-    existing: THREE.LineSegments | undefined,
-    minX: number,
-    maxX: number,
-    minZ: number,
-    maxZ: number,
-    color: string,
-    opacity: number,
-  ) {
-    const geometry = new THREE.BufferGeometry();
-    const points: number[] = [];
-    const y = 0.02;
-
-    for (let x = minX; x <= maxX; x += 1) {
-      points.push(x, y, minZ, x, y, maxZ);
-    }
-
-    for (let z = minZ; z <= maxZ; z += 1) {
-      points.push(minX, y, z, maxX, y, z);
-    }
-
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
-    if (!existing) {
-      const next = new THREE.LineSegments(
-        geometry,
-        new THREE.LineBasicMaterial({ color, transparent: true, opacity }),
-      );
-      this.scene.add(next);
-      return next;
-    }
-
-    existing.geometry.dispose();
-    existing.geometry = geometry;
-    return existing;
   }
 
   /** Draws debug path lines for every animal loop. */
@@ -545,6 +460,7 @@ export class ThreeScene {
         }
 
         const root = cloneSkinned(template);
+        normalizeImportedModelMaterials(root);
         root.scale.setScalar(0.35);
         root.position.set(0, 0.18, 0);
         this.state.animalRoots.set(animal.id, root);
@@ -578,7 +494,7 @@ export class ThreeScene {
         continue;
       }
 
-      root.position.set(point.x, 0.22 + point.jumpHeight, point.y);
+      root.position.set(point.x, 0 + point.jumpHeight, point.y);
       root.lookAt(nextPoint.x, root.position.y, nextPoint.y);
     }
   }
@@ -600,7 +516,8 @@ export class ThreeScene {
       const meshKey = placementKey(placement);
       nextKeys.add(meshKey);
       let mesh = this.state.blockMeshes.get(meshKey);
-      const expectedRenderMode = "model";
+      const visualKind = getBlockVisualKind(block);
+      const expectedRenderMode = visualKind;
       const needsRebuild = Boolean(mesh && mesh.userData.renderMode !== expectedRenderMode);
       if (mesh && needsRebuild) {
         this.disposeSceneObject(mesh);
@@ -608,18 +525,21 @@ export class ThreeScene {
         mesh = undefined;
       }
       if (!mesh) {
-        mesh = createBlockModelMesh(this.blockTiles, block.timbre, block, placement.rotation);
+        mesh =
+          visualKind === "terrain"
+            ? createBlockModelMesh(this.blockTiles, block.timbre, block, placement.rotation)
+            : createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, placement.rotation);
         mesh.userData.renderMode = expectedRenderMode;
         this.state.blockMeshes.set(meshKey, mesh);
         this.scene.add(mesh);
       }
 
       const isPressed = pressedPlacementIds.has(placementKey(placement));
-      const pressDepth = isPressed ? 0.1 : 0;
-      mesh.scale.y = isPressed ? 0.52 : 1;
+      const pressDepth = visualKind === "button" && isPressed ? 0.1 : 0;
+      mesh.scale.y = visualKind === "button" && isPressed ? 0.52 : 1;
       mesh.position.set(
         placement.origin.x + getDisplayOffset(block, placement.rotation).x,
-        0.12 - pressDepth,
+        -pressDepth,
         placement.origin.y + getDisplayOffset(block, placement.rotation).y,
       );
       applyPickData(mesh, {
@@ -689,7 +609,8 @@ export class ThreeScene {
       const meshKey = piece.pieceId;
       nextKeys.add(meshKey);
       let mesh = this.state.stashMeshes.get(meshKey);
-      const expectedRenderMode = "model";
+      const visualKind = getBlockVisualKind(block);
+      const expectedRenderMode = visualKind;
       const needsRebuild = Boolean(mesh && mesh.userData.renderMode !== expectedRenderMode);
       if (mesh && needsRebuild) {
         this.disposeSceneObject(mesh);
@@ -697,14 +618,17 @@ export class ThreeScene {
         mesh = undefined;
       }
       if (!mesh) {
-        mesh = createBlockModelMesh(this.blockTiles, block.timbre, block, piece.rotation, 0.92);
+        mesh =
+          visualKind === "terrain"
+            ? createBlockModelMesh(this.blockTiles, block.timbre, block, piece.rotation, 0.92)
+            : createBlockMesh(this.state.iconTextureCache, block.timbre, block.color, block, piece.rotation, 0.92);
         mesh.userData.renderMode = expectedRenderMode;
         this.state.stashMeshes.set(meshKey, mesh);
         this.scene.add(mesh);
       }
       mesh.position.set(
         piece.worldX + getDisplayOffset(block, piece.rotation).x,
-        0.12,
+        0,
         piece.worldZ + getDisplayOffset(block, piece.rotation).y,
       );
       applyPickData(mesh, {
@@ -748,7 +672,25 @@ export class ThreeScene {
       if (!this.blockTiles) {
         return;
       }
-      mesh = createBlockModelMesh(this.blockTiles, block.timbre, block, preview.placement.rotation, 0.55, !preview.valid);
+      const visualKind = getBlockVisualKind(block);
+      mesh =
+        visualKind === "terrain"
+          ? createBlockModelMesh(
+            this.blockTiles,
+            block.timbre,
+            block,
+            preview.placement.rotation,
+            1,
+            preview.valid ? "valid" : "invalid",
+          )
+          : createBlockMesh(
+            this.state.iconTextureCache,
+            block.timbre,
+            preview.valid ? block.color : "#ff5f57",
+            block,
+            preview.placement.rotation,
+            0.55,
+          );
       this.state.previewMesh = mesh;
       this.state.previewSignature = previewSignature;
       this.scene.add(mesh);
@@ -756,7 +698,7 @@ export class ThreeScene {
 
     mesh.position.set(
       preview.placement.origin.x + getDisplayOffset(block, preview.placement.rotation).x,
-      0.18,
+      0,
       preview.placement.origin.y + getDisplayOffset(block, preview.placement.rotation).y,
     );
   }
@@ -790,22 +732,77 @@ export class ThreeScene {
     });
   }
 
+  /** Hides terrain cells currently replaced by terrain blocks, without rebuilding the terrain grid. */
+  private updateTerrain(
+    level: LevelDefinition,
+    placements: Placement[],
+    stashPieces: StashPiece[],
+    preview?: PreviewPlacement,
+  ) {
+    if (!this.blockTiles) {
+      return;
+    }
+
+    const inventoryMap = new Map(level.inventory.map((block) => [block.id, block]));
+    const hiddenCells = new Set<string>();
+
+    for (const placement of placements) {
+      const block = inventoryMap.get(placement.blockId);
+      if (!block || getBlockVisualKind(block) !== "terrain") {
+        continue;
+      }
+      for (const cell of getFootprintCells(block, placement.origin.x, placement.origin.y, placement.rotation)) {
+        hiddenCells.add(`${cell.x},${cell.y}`);
+      }
+    }
+
+    for (const piece of stashPieces) {
+      const block = inventoryMap.get(piece.blockId);
+      if (!block || getBlockVisualKind(block) !== "terrain") {
+        continue;
+      }
+      for (const cell of getFootprintCells(block, piece.worldX, piece.worldZ, piece.rotation)) {
+        hiddenCells.add(`${cell.x},${cell.y}`);
+      }
+    }
+
+    if (preview) {
+      const block = inventoryMap.get(preview.placement.blockId);
+      if (block && getBlockVisualKind(block) === "terrain") {
+        for (const cell of getFootprintCells(block, preview.placement.origin.x, preview.placement.origin.y, preview.placement.rotation)) {
+          hiddenCells.add(`${cell.x},${cell.y}`);
+        }
+      }
+    }
+
+    const hiddenSignature = [...hiddenCells].sort().join("|");
+    if (hiddenSignature === this.state.terrainHiddenSignature) {
+      return;
+    }
+
+    for (const [key, cellMesh] of this.state.terrainCells) {
+      cellMesh.visible = !hiddenCells.has(key);
+    }
+    this.state.terrainHiddenSignature = hiddenSignature;
+  }
+
   /** Loads all block tile templates defined in docs/spec.md from the shared asset registry. */
   private async ensureBlockTileTemplates(onProgress?: (progress: number) => void) {
-    const entries = Object.entries(blockTileModelPaths) as Array<[keyof typeof blockTileModelPaths, string]>;
+    const entries = Object.entries(blockTileModelPaths) as Array<[keyof typeof blockTileModelPaths, (typeof blockTileModelPaths)[keyof typeof blockTileModelPaths]]>;
     const loaded = await Promise.all(
-      entries.map(async ([key, path], index) => {
-        const template = await loadModelTemplate(path);
+      entries.map(async ([key, asset], index) => {
+        const template = await loadModelTemplate(asset);
         onProgress?.((index + 1) / entries.length);
-        return [key, this.normalizeBlockTileTemplate(template)] as const;
+        return [key, this.normalizeBlockTileTemplate(template, asset.yOffset ?? 0)] as const;
       }),
     );
     this.blockTiles = Object.fromEntries(loaded) as BlockTileTemplates;
   }
 
   /** Normalizes one tile template so each model occupies roughly one cell, is centered, and sits on y=0. */
-  private normalizeBlockTileTemplate(template: THREE.Object3D) {
+  private normalizeBlockTileTemplate(template: THREE.Object3D, yOffset: number) {
     const normalized = template.clone(true);
+    normalizeImportedModelMaterials(normalized);
     const initialBounds = new THREE.Box3().setFromObject(normalized);
     const initialSize = new THREE.Vector3();
     initialBounds.getSize(initialSize);
@@ -819,12 +816,60 @@ export class ThreeScene {
     normalized.position.x -= center.x;
     normalized.position.z -= center.z;
     normalized.position.y -= bounds.min.y;
+    normalized.position.y += yOffset;
 
     return normalized;
   }
 }
 
+/** Enumerates the occupied integer cells of a block footprint at a world-space origin. */
+function getFootprintCells(
+  block: { width: number; height: number },
+  originX: number,
+  originY: number,
+  rotation: 0 | 90,
+) {
+  const width = rotation === 90 ? block.height : block.width;
+  const height = rotation === 90 ? block.width : block.height;
+  const cells: Array<{ x: number; y: number }> = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      cells.push({ x: originX + x, y: originY + y });
+    }
+  }
+  return cells;
+}
+
 /** Returns the stable key used to identify a placed block instance. */
 export function placementKey(placement: Placement) {
   return placementInstanceKey(placement);
+}
+
+/** Normalizes imported lit materials so blocks and animals respond to scene lights more consistently. */
+function normalizeImportedModelMaterials(root: THREE.Object3D) {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    const material = mesh.material;
+    if (!material) {
+      return;
+    }
+
+    if (Array.isArray(material)) {
+      for (const item of material) {
+        normalizeImportedMaterial(item);
+      }
+      return;
+    }
+
+    normalizeImportedMaterial(material);
+  });
+}
+
+/** Removes baked self-lighting bias from imported materials while preserving base color textures. */
+function normalizeImportedMaterial(material: THREE.Material) {
+  const litMaterial = material as THREE.MeshStandardMaterial;
+  if ("emissive" in litMaterial && litMaterial.emissive) {
+    litMaterial.emissive.set("#000000");
+    litMaterial.emissiveIntensity = 0;
+  }
 }

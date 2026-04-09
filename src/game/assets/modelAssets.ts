@@ -5,17 +5,22 @@ import type { ModelRegistry } from "../types";
 
 export type ModelAssetCategory = "Animals" | "Blocks" | "Plants";
 
+export type ModelAssetEntry = {
+  path: string;
+  yOffset?: number;
+};
+
 export type BlockTileModelPaths = {
-  grass: string;
-  inventory: string;
-  pathEnd: string;
-  pathStraight: string;
-  pathCorner: string;
-  pathTile: string;
-  riverEnd: string;
-  riverStraight: string;
-  riverCorner: string;
-  riverTile: string;
+  grass: ModelAssetEntry;
+  inventory: ModelAssetEntry;
+  pathEnd: ModelAssetEntry;
+  pathStraight: ModelAssetEntry;
+  pathCorner: ModelAssetEntry;
+  pathTile: ModelAssetEntry;
+  riverEnd: ModelAssetEntry;
+  riverStraight: ModelAssetEntry;
+  riverCorner: ModelAssetEntry;
+  riverTile: ModelAssetEntry;
 };
 
 const modelTemplateCache = new Map<string, Promise<THREE.Object3D>>();
@@ -23,6 +28,14 @@ const modelTemplateCache = new Map<string, Promise<THREE.Object3D>>();
 /** Builds a relative URL to a model asset under public/3Dmodels. */
 export function buildModelAssetPath(category: ModelAssetCategory, filename: string) {
   return `./3Dmodels/${category}/${filename}`;
+}
+
+/** Builds a model asset entry with optional manual Y correction for uneven source meshes. */
+export function defineModelAsset(category: ModelAssetCategory, filename: string, yOffset = 0): ModelAssetEntry {
+  return {
+    path: buildModelAssetPath(category, filename),
+    yOffset,
+  };
 }
 
 /** Canonical animal model registry used by authored and generated levels. */
@@ -51,20 +64,21 @@ export const defaultAnimalModelRegistry: ModelRegistry = {
 
 /** Canonical block tile model paths defined by docs/spec.md. */
 export const blockTileModelPaths: BlockTileModelPaths = {
-  grass: buildModelAssetPath("Blocks", "ground_grass.glb"),
-  inventory: buildModelAssetPath("Blocks", "ground_pathOpen.glb"),
-  pathEnd: buildModelAssetPath("Blocks", "ground_pathEndClosed.glb"),
-  pathStraight: buildModelAssetPath("Blocks", "ground_pathStraight.glb"),
-  pathCorner: buildModelAssetPath("Blocks", "ground_pathCorner.glb"),
-  pathTile: buildModelAssetPath("Blocks", "ground_pathTile.glb"),
-  riverEnd: buildModelAssetPath("Blocks", "ground_riverEndClosed.glb"),
-  riverStraight: buildModelAssetPath("Blocks", "ground_riverStraight.glb"),
-  riverCorner: buildModelAssetPath("Blocks", "ground_riverCorner.glb"),
-  riverTile: buildModelAssetPath("Blocks", "ground_riverTile.glb"),
+  grass: defineModelAsset("Blocks", "ground_grass.glb"),
+  inventory: defineModelAsset("Blocks", "ground_pathOpen.glb"),
+  pathEnd: defineModelAsset("Blocks", "ground_pathEndClosed.glb"),
+  pathStraight: defineModelAsset("Blocks", "ground_pathStraight.glb"),
+  pathCorner: defineModelAsset("Blocks", "ground_pathCorner.glb"),
+  pathTile: defineModelAsset("Blocks", "ground_pathTile.glb"),
+  riverEnd: defineModelAsset("Blocks", "ground_riverEndClosed.glb"),
+  riverStraight: defineModelAsset("Blocks", "ground_riverStraight.glb"),
+  riverCorner: defineModelAsset("Blocks", "ground_riverCorner.glb"),
+  riverTile: defineModelAsset("Blocks", "ground_riverTile.glb"),
 };
 
 /** Loads and caches one model template by path for later cloning. */
-export function loadModelTemplate(path: string) {
+export function loadModelTemplate(asset: string | ModelAssetEntry) {
+  const path = typeof asset === "string" ? asset : asset.path;
   const cached = modelTemplateCache.get(path);
   if (cached) {
     return cached;
@@ -77,8 +91,8 @@ export function loadModelTemplate(path: string) {
 }
 
 /** Preloads a set of model templates and reports simple completion progress. */
-export async function preloadModelTemplates(paths: string[], onProgress?: (progress: number) => void) {
-  const uniquePaths = [...new Set(paths)];
+export async function preloadModelTemplates(assets: Array<string | ModelAssetEntry>, onProgress?: (progress: number) => void) {
+  const uniquePaths = [...new Set(assets.map((asset) => (typeof asset === "string" ? asset : asset.path)))];
   if (uniquePaths.length === 0) {
     onProgress?.(1);
     return;

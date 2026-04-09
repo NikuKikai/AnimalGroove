@@ -44,6 +44,8 @@ export type PlaceableBlock = {
   color: string;
 };
 
+export type BlockVisualKind = "terrain" | "button";
+
 export type Placement = {
   blockId: string;
   origin: Vec2;
