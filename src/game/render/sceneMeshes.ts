@@ -66,7 +66,7 @@ export function getDisplayOffset(block: { width: number; height: number }, rotat
 
 /** Creates one additive pulse ring mesh for block hit feedback. */
 export function createHitPulseMesh(state: HitPulse["state"]) {
-  const color = state === "matched" ? "#1db65f" : "#d63b35";
+  const color = state === "matched" ? "#1db65f" : state === "wrong" ? "#d63b35" : "#f1f1f1";
   const mesh = new THREE.Mesh(
     new THREE.RingGeometry(0.3, 0.42, 40),
     new THREE.MeshBasicMaterial({

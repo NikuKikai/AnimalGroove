@@ -602,7 +602,9 @@ export class ThreeScene {
   /** Renders expanding hit rings below blocks for matched and wrong notes. */
   private updateHitPulses(level: LevelDefinition, beat: number, hitPulses: HitPulse[]) {
     const durationBeats = 0.52;
-    const nextKeys = new Set<string>();
+    for (const mesh of this.state.hitPulseMeshes.values()) {
+      mesh.visible = false;
+    }
 
     for (const pulse of hitPulses) {
       const age = normalizedBeatDelta(beat, pulse.beat, level.loopBeats);
@@ -610,7 +612,6 @@ export class ThreeScene {
         continue;
       }
 
-      nextKeys.add(pulse.id);
       let effectMesh = this.state.hitPulseMeshes.get(pulse.id);
       if (!effectMesh) {
         effectMesh = createHitPulseMesh(pulse.state);
@@ -620,17 +621,16 @@ export class ThreeScene {
 
       const progress = Math.max(0, Math.min(1, age / durationBeats));
       const material = effectMesh.material as THREE.MeshBasicMaterial;
-      material.opacity = (1 - progress) * (1 - progress) * 0.78;
-      effectMesh.scale.setScalar(0.45 + progress * 2.1);
+      const color = pulse.state === "matched" ? "#1db65f" : pulse.state === "wrong" ? "#d63b35" : "#f1f1f1";
+      material.color.set(color);
+      const isEmpty = pulse.state === "empty";
+      const baseOpacity = isEmpty ? 0.5 : 1.0;
+      const baseScale = isEmpty ? 0.1 : 0.9;
+      const growth = isEmpty ? 0.6 : 1.3;
+      material.opacity = (1 - progress) * (1 - progress) * baseOpacity;
+      effectMesh.scale.setScalar(baseScale + progress * growth);
       effectMesh.position.set(pulse.cell.x, 0.02, pulse.cell.y);
-    }
-
-    for (const [pulseId, mesh] of this.state.hitPulseMeshes) {
-      if (nextKeys.has(pulseId)) {
-        continue;
-      }
-      this.disposeSceneObject(mesh);
-      this.state.hitPulseMeshes.delete(pulseId);
+      effectMesh.visible = true;
     }
   }
 

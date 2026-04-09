@@ -15,9 +15,8 @@ export type StashPiece = {
 
 export type HitPulse = {
   id: string;
-  placementInstanceId: string;
   beat: number;
-  state: "matched" | "wrong";
+  state: "matched" | "wrong" | "empty";
   cell: { x: number; y: number };
 };
 

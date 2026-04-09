@@ -4,7 +4,7 @@ import { Transport } from "../game/engine/transport";
 import type { HitPulse, PreviewPlacement, StashPiece } from "../game/render/threeScene";
 import { placementKey, RESERVE_MARGIN, ThreeScene } from "../game/render/threeScene";
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
-import { validatePlacements } from "../game/simulation";
+import { sampleAnimalPathVisits, validatePlacements } from "../game/simulation";
 import type { Placement } from "../game/types";
 
 const audioEngine = new AudioEngine();
@@ -41,7 +41,6 @@ export function BoardView() {
   const audioReadyRef = useRef(false);
   const audioTriggerRef = useRef(new Set<string>());
   const pulseMapRef = useRef(new Map<string, HitPulse>());
-  const hitPulsesRef = useRef<HitPulse[]>([]);
   const loadRequestRef = useRef(0);
 
   const [preview, setPreview] = useState<PreviewPlacement | undefined>(undefined);
@@ -77,6 +76,11 @@ export function BoardView() {
   }, [audioMix]);
 
   const stashPieces = useMemo(() => buildStashPieces(level, placements, draggingBlockId), [draggingBlockId, level, placements]);
+  const animalVisits = useMemo(
+    () => level.animals.flatMap((animal) => sampleAnimalPathVisits(animal, level.loopBeats)),
+    [level],
+  );
+  const occupiedCells = useMemo(() => buildOccupiedCellSet(level, placements), [level, placements]);
   const pressedPlacementIds = useMemo(() => {
     const pressed = new Set<string>();
     for (const trigger of simulation.producedTriggers) {
@@ -110,7 +114,7 @@ export function BoardView() {
         useGameStore.getState().showPaths,
         buildStashPieces(activeLevel, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
         pressedPlacementIdsRef.current,
-        hitPulsesRef.current,
+        [...pulseMapRef.current.values()],
         previewRef.current,
       );
     });
@@ -195,7 +199,7 @@ export function BoardView() {
         useGameStore.getState().showPaths,
         buildStashPieces(activeLevel, useGameStore.getState().placements, useGameStore.getState().draggingBlockId),
         pressedPlacementIdsRef.current,
-        hitPulsesRef.current,
+        [...pulseMapRef.current.values()],
         nextPreview,
       );
     };
@@ -347,7 +351,6 @@ export function BoardView() {
     lastBeatRef.current = 0;
     audioTriggerRef.current.clear();
     pulseMapRef.current.clear();
-    hitPulsesRef.current = [];
     previewRef.current = undefined;
     setPreview(undefined);
   }, [level]);
@@ -371,7 +374,7 @@ export function BoardView() {
       showPaths,
       stashPieces,
       pressedPlacementIds,
-      hitPulsesRef.current,
+      [...pulseMapRef.current.values()],
       preview,
     );
   }, [currentBeat, level, placements, preview, pressedPlacementIds, showPaths, stashPieces]);
@@ -380,7 +383,6 @@ export function BoardView() {
     if (currentBeat < lastBeatRef.current) {
       audioTriggerRef.current.clear();
       pulseMapRef.current.clear();
-      hitPulsesRef.current = [];
     }
 
     for (const trigger of simulation.producedTriggers) {
@@ -394,9 +396,8 @@ export function BoardView() {
 
       audioTriggerRef.current.add(trigger.id);
       const matched = simulation.targetNotes.some((note) => note.matchedTriggerId === trigger.id);
-      pulseMapRef.current.set(trigger.id, {
-        id: trigger.id,
-        placementInstanceId: trigger.placementInstanceId,
+      pulseMapRef.current.set(trigger.animalId, {
+        id: trigger.animalId,
         beat: trigger.beat,
         state: matched ? "matched" : "wrong",
         cell: trigger.cell,
@@ -406,13 +407,28 @@ export function BoardView() {
       }
     }
 
+    for (const visit of animalVisits) {
+      if (!crossedBeat(lastBeatRef.current, currentBeat, visit.beat)) {
+        continue;
+      }
+      if (occupiedCells.has(`${visit.cell.x},${visit.cell.y}`)) {
+        continue;
+      }
+
+      pulseMapRef.current.set(visit.animalId, {
+        id: visit.animalId,
+        beat: visit.beat,
+        state: "empty",
+        cell: visit.cell,
+      });
+    }
+
     const pulseDurationBeats = 0.52;
     for (const [pulseId, pulse] of pulseMapRef.current) {
       if (normalizedBeatDelta(currentBeat, pulse.beat, level.loopBeats) > pulseDurationBeats) {
         pulseMapRef.current.delete(pulseId);
       }
     }
-    hitPulsesRef.current = [...pulseMapRef.current.values()];
 
     if (audioReadyRef.current) {
       for (const note of simulation.targetNotes) {
@@ -423,7 +439,7 @@ export function BoardView() {
     }
 
     lastBeatRef.current = currentBeat;
-  }, [currentBeat, level.loopBeats, simulation]);
+  }, [animalVisits, currentBeat, level.loopBeats, occupiedCells, simulation]);
 
   return (
     <section className="board-shell">
@@ -544,4 +560,25 @@ function findReserveOrigin(
   }
 
   return candidates[0] ?? { x: -RESERVE_MARGIN, y: -RESERVE_MARGIN };
+}
+
+/** Builds a cell-key set for all currently occupied board cells by placed blocks. */
+function buildOccupiedCellSet(level: ReturnType<typeof getActiveLevel>, placements: Placement[]) {
+  const inventoryById = new Map(level.inventory.map((block) => [block.id, block]));
+  const occupied = new Set<string>();
+  for (const placement of placements) {
+    const block = inventoryById.get(placement.blockId);
+    if (!block) {
+      continue;
+    }
+
+    const width = placement.rotation === 90 ? block.height : block.width;
+    const height = placement.rotation === 90 ? block.width : block.height;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        occupied.add(`${placement.origin.x + x},${placement.origin.y + y}`);
+      }
+    }
+  }
+  return occupied;
 }
