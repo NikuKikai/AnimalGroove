@@ -55,7 +55,6 @@ export function BoardView() {
   const levels = useGameStore((state) => state.levels);
   const placements = useGameStore((state) => state.placements);
   const draggingBlockId = useGameStore((state) => state.draggingBlockId);
-  const draggingPieceId = useGameStore((state) => state.draggingPieceId);
   const showPaths = useGameStore((state) => state.showPaths);
   const currentBeat = useGameStore((state) => state.currentBeat);
   const simulation = useGameStore((state) => state.simulation);
@@ -194,9 +193,15 @@ export function BoardView() {
         return;
       }
 
+      const draggingBlockId = state.draggingBlockId;
+      const draggingPieceId = state.draggingPieceId;
+      if (!draggingBlockId || !draggingPieceId) {
+        return;
+      }
+
       const nextPlacement: Placement = {
-        blockId: state.draggingBlockId,
-        pieceId: state.draggingPieceId,
+        blockId: draggingBlockId,
+        pieceId: draggingPieceId,
         origin: cell,
         rotation: state.draggingRotation,
       };
@@ -269,9 +274,15 @@ export function BoardView() {
         return;
       }
 
+      const draggingBlockId = state.draggingBlockId;
+      const draggingPieceId = state.draggingPieceId;
+      if (!draggingBlockId || !draggingPieceId) {
+        return;
+      }
+
       const nextPlacement: Placement = {
-        blockId: state.draggingBlockId,
-        pieceId: state.draggingPieceId,
+        blockId: draggingBlockId,
+        pieceId: draggingPieceId,
         origin: cell,
         rotation,
       };

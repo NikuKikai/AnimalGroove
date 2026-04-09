@@ -37,8 +37,9 @@ export function materializeLevelLayout(
   const rng = options.rng ?? Math.random;
   const pathCells = buildPathCellSet(animals);
   const initialPlacements = createInitialPlacements(blockDrafts, pathCells, options.blockedCells ?? [], rng);
-  const blocks = blockDrafts.map((draft, index) => {
+  const blocks: LevelBlock[] = blockDrafts.map((draft, index) => {
     const pieceId = `${draft.blockId}-${index}`;
+    const initialPlacement = initialPlacements[index];
     return {
       blockId: draft.blockId,
       pieceId,
@@ -51,13 +52,13 @@ export function materializeLevelLayout(
       initialPlacement: {
         blockId: draft.blockId,
         pieceId,
-        origin: initialPlacements[index]?.origin ?? draft.solutionOrigin,
-        rotation: initialPlacements[index]?.rotation ?? draft.solutionRotation,
+        origin: initialPlacement?.origin ?? draft.solutionOrigin,
+        rotation: initialPlacement?.rotation ?? draft.solutionRotation,
       },
     };
   });
 
-  const referenceSolution = blockDrafts.map((draft, index) => ({
+  const referenceSolution: Placement[] = blockDrafts.map((draft, index) => ({
     blockId: draft.blockId,
     pieceId: `${draft.blockId}-${index}`,
     origin: draft.solutionOrigin,
@@ -92,7 +93,7 @@ function createInitialPlacements(
   if (pathPoints.length === 0) {
     return drafts.map((draft, index) => ({
       origin: { x: index * (draft.width + 1), y: 0 },
-      rotation: 0,
+      rotation: 0 as const,
     }));
   }
 

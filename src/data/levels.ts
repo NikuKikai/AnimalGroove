@@ -2,8 +2,9 @@ import { defaultAnimalModelRegistry } from "../game/assets/modelAssets";
 import { defineLevel } from "../game/engine/levelDsl";
 import { materializeLevelLayout } from "../game/simulation/levelBlockLayout";
 import { generateGroove } from "../game/simulation";
+import type { AnimalDefinition } from "../game/types";
 
-const tutorialAnimals = [
+const tutorialAnimals: AnimalDefinition[] = [
   {
     id: "fox-1",
     name: "Fox",
@@ -19,7 +20,7 @@ const tutorialAnimals = [
       cycleBeats: 4,
     },
   },
-] as const;
+];
 
 const tutorialLayout = materializeLevelLayout([...tutorialAnimals], [
   {
@@ -86,7 +87,7 @@ const ensembleGroove = generateGroove({
   seed: 12,
 });
 
-const ensembleAnimals = [
+const ensembleAnimals: AnimalDefinition[] = [
   {
     id: "panda-1",
     name: "Panda",
@@ -126,7 +127,7 @@ const ensembleAnimals = [
       startPhaseBeat: 0.5,
     },
   },
-] as const;
+];
 
 const ensembleLayout = materializeLevelLayout(
   [...ensembleAnimals],
