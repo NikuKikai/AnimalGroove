@@ -340,14 +340,6 @@ button {
     opacity: 0.72;
 }
 
-.timeline-track {
-    position: relative;
-    height: 52px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    overflow: hidden;
-}
-
 .hud-timeline-multilane {
     flex: 1;
     display: flex;
