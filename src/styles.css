@@ -33,98 +33,87 @@ select {
     pointer-events: none;
 }
 
-.hud-cluster {
+.hud-root {
     position: absolute;
-    top: 18px;
-    left: 18px;
-    right: 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    inset: 0;
     pointer-events: none;
 }
 
 .overlay-panel {
-    position: absolute;
-    border: 1px solid rgba(127, 209, 185, 0.22);
+    border: 1px solid rgba(127, 209, 185, 0.24);
     border-radius: 18px;
     padding: 10px 12px;
     backdrop-filter: blur(14px);
-    background: rgba(13, 24, 26, 0.82);
-    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.18);
+    background: rgba(9, 18, 20, 0.85);
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.22);
     pointer-events: auto;
 }
 
-.hud-panel {
-    position: relative;
-    inset: auto;
-    pointer-events: auto;
-}
-
-.hud-row {
-    display: flex;
-    gap: 12px;
+.hud-topline {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    right: 16px;
+    display: grid;
+    grid-template-columns: 1fr minmax(220px, 360px) 1fr;
     align-items: center;
+    gap: 12px;
+    pointer-events: none;
 }
 
-.hud-top-row {
-    justify-content: space-between;
-    gap: 16px;
-}
-
-.hud-timeline-row {
-    margin-top: 8px;
-    align-items: stretch;
-}
-
-.hud-group {
+.hud-left-controls,
+.hud-right-controls {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 38px;
+    pointer-events: auto;
 }
 
-.hud-group+.hud-group {
-    padding-left: 16px;
-    border-left: 1px solid rgba(127, 209, 185, 0.18);
-}
-
-.hud-level-group {
-    min-width: 180px;
-    flex-wrap: wrap;
-}
-
-.hud-button-group {
-    flex-wrap: wrap;
-}
-
-.hud-mix-group {
-    flex: 1;
-    justify-content: flex-end;
-    gap: 16px;
-    flex-wrap: wrap;
+.hud-right-controls {
+    justify-self: end;
     position: relative;
 }
 
-.hud-mix-group::before {
-    content: "";
-    position: absolute;
-    right: calc(33% + 4px);
-    top: 15%;
-    bottom: 15%;
-    width: 1px;
+.hud-float-button {
+    border: 1px solid rgba(127, 209, 185, 0.55);
+    background: rgba(6, 13, 15, 0.2);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
+}
+
+.hud-float-button.is-active,
+.hud-float-button:hover {
     background: rgba(127, 209, 185, 0.18);
 }
 
-select {
-    padding: 8px 12px;
-    color: #f8f1d8;
-    background: #224149;
-    border: 0;
-    border-radius: 12px;
+.hud-match-gauge-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-width: 0;
+    pointer-events: none;
+}
+
+.hud-match-track-inline {
+    position: relative;
+    height: 12px;
+    flex: 1;
+    min-width: 170px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.hud-match-fill-inline {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(245, 175, 89, 0.92) 0%, rgba(127, 209, 185, 0.88) 100%);
 }
 
 .hint-button {
+    width: 100%;
     border-radius: 12px;
     padding: 8px 14px;
     border: 1px solid rgba(127, 209, 185, 0.5);
@@ -137,29 +126,146 @@ select {
     background: rgba(127, 209, 185, 0.15);
 }
 
+.hud-menu-panel {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    width: min(320px, calc(100vw - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 16;
+}
+
+.hud-menu-title {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.68;
+}
+
+.hud-menu-audio {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
 .audio-control {
-    display: inline-flex;
+    display: grid;
+    grid-template-columns: 46px 1fr;
     align-items: center;
     gap: 8px;
 }
 
-.audio-control.is-muted .audio-label,
-.audio-control.is-muted .audio-slider {
-    opacity: 0.45;
-}
-
 .audio-slider {
-    width: 108px;
+    width: 100%;
+    accent-color: #7fd1b9;
 }
 
-.audio-mute {
-    min-width: 68px;
-    transition: background 0.2s ease, color 0.2s ease;
+.hud-timeline-panel {
+    position: absolute;
+    top: 66px;
+    left: 16px;
+    right: 16px;
+    z-index: 10;
 }
 
-.audio-mute.is-active {
-    background: #5c6b6a;
-    color: #f8f1d8;
+.hud-level-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 24;
+    pointer-events: none;
+}
+
+.hud-level-overlay.is-open {
+    pointer-events: auto;
+}
+
+.hud-level-scrim {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgba(3, 6, 8, 0.62);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.hud-level-overlay.is-open .hud-level-scrim {
+    opacity: 1;
+}
+
+.hud-level-drawer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(360px, calc(100vw - 24px));
+    border-radius: 0 20px 20px 0;
+    transform: translateX(-104%);
+    transition: transform 0.24s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+}
+
+.hud-level-overlay.is-open .hud-level-drawer {
+    transform: translateX(0);
+}
+
+.hud-level-drawer-head h2 {
+    margin: 2px 0 0;
+    font-size: 20px;
+}
+
+.hud-level-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.hud-level-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: auto;
+    padding-right: 4px;
+}
+
+.hud-level-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 10px;
+    padding: 10px 12px;
+    text-align: left;
+    border: 1px solid rgba(127, 209, 185, 0.2);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.hud-level-card:hover,
+.hud-level-card.is-active {
+    border-color: rgba(127, 209, 185, 0.65);
+    background: rgba(127, 209, 185, 0.15);
+}
+
+.hud-level-card-index {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    min-width: 32px;
+    font-size: 11px;
+    opacity: 0.72;
+}
+
+.hud-level-card-name {
+    font-size: 14px;
+}
+
+.hud-level-card-copy {
+    font-size: 11px;
+    opacity: 0.65;
 }
 
 button {
@@ -234,12 +340,6 @@ button {
     opacity: 0.72;
 }
 
-.debug-panel {
-    right: 18px;
-    bottom: 18px;
-    width: 260px;
-}
-
 .timeline-track {
     position: relative;
     height: 52px;
@@ -298,60 +398,11 @@ button {
     stroke-width: 1.2;
 }
 
-.hud-gauge-row {
-    display: flex;
-    justify-content: flex-end;
-    pointer-events: none;
-}
-
-.hud-match-gauge {
-    width: 38px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    pointer-events: none;
-}
-
 .hud-match-value {
     font-size: 12px;
     line-height: 1;
     color: rgba(248, 241, 216, 0.9);
     font-variant-numeric: tabular-nums;
-}
-
-.hud-match-track {
-    position: relative;
-    width: 10px;
-    height: 86px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    background: rgba(255, 255, 255, 0.08);
-    overflow: hidden;
-}
-
-.hud-match-fill {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    border-radius: 999px;
-    background: linear-gradient(180deg, rgba(245, 175, 89, 0.85) 0%, rgba(127, 209, 185, 0.88) 100%);
-}
-
-.debug-grid {
-    display: grid;
-    gap: 8px;
-}
-
-.debug-grid {
-    grid-template-columns: 1fr auto;
-}
-
-.debug-actions {
-    margin-top: 12px;
-    display: flex;
-    justify-content: flex-end;
 }
 
 .hud-pill {
@@ -370,47 +421,27 @@ button {
     background: rgba(127, 209, 185, 0.2);
 }
 
-.audio-control {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-
 .audio-label {
     min-width: 36px;
     opacity: 0.8;
 }
 
-.audio-slider {
-    width: 108px;
-    accent-color: #7fd1b9;
-}
-
-.audio-mute {
-    min-width: 68px;
-}
-
-.audio-mute.is-muted {
-    background: #57353a;
-}
-
 @media (max-width: 1280px) {
-    .debug-panel {
-        width: auto;
-        left: 12px;
-        right: 12px;
+    .hud-topline {
+        grid-template-columns: 1fr;
+        gap: 8px;
     }
 
-    .debug-panel {
-        display: none;
+    .hud-match-gauge-inline {
+        justify-content: flex-start;
     }
 
-    .hud-row {
-        flex-wrap: wrap;
+    .hud-right-controls {
+        justify-self: start;
     }
 
-    .hud-group+.hud-group {
-        padding-left: 0;
-        border-left: 0;
+    .hud-menu-panel {
+        right: auto;
+        left: 0;
     }
 }

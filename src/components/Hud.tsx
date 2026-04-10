@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 import type { RhythmEvent, TriggerEvent } from "../game/types";
 
@@ -14,82 +15,122 @@ export function Hud() {
   const togglePaths = useGameStore((state) => state.togglePaths);
   const resetPlacements = useGameStore((state) => state.resetPlacements);
   const setAudioVolume = useGameStore((state) => state.setAudioVolume);
-  const toggleAudioMute = useGameStore((state) => state.toggleAudioMute);
+  const applySolution = useGameStore((state) => state.applySolution);
+  const [isLevelDrawerOpen, setIsLevelDrawerOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const level = getActiveLevel({ activeLevelId, levels });
   const laneKeys = collectTimelineLanes(level.targetRhythm, simulation.producedTriggers);
   const matchPercent = computeCurveMatchPercent(level.targetRhythm, simulation.producedTriggers, level.loopBeats);
 
   return (
-    <div className="hud-cluster">
-      <header className="overlay-panel hud-panel">
-        <div className="hud-row hud-top-row">
-          <div className="hud-group hud-level-group">
-            <select value={activeLevelId} onChange={(event) => setActiveLevel(event.target.value)}>
-              {levels.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.name}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={createRandomLevel} title="Generate a random test level">
+    <div className="hud-root">
+      <div className="hud-topline">
+        <div className="hud-left-controls">
+          <button type="button" className="hud-float-button" onClick={() => setIsLevelDrawerOpen(true)}>
+            Levels
+          </button>
+          <button type="button" className="hud-float-button" onClick={resetPlacements}>
+            Reset
+          </button>
+          <button
+            type="button"
+            className={`hud-float-button ${showPaths ? "is-active" : ""}`}
+            onClick={togglePaths}
+          >
+            Hint
+          </button>
+        </div>
+
+        <aside className="hud-match-gauge-inline" title="Curve match score">
+          <div className="hud-match-value">{Math.round(matchPercent)}%</div>
+          <div className="hud-match-track-inline">
+            <div className="hud-match-fill-inline" style={{ width: `${Math.max(0, Math.min(100, matchPercent))}%` }} />
+          </div>
+        </aside>
+
+        <div className="hud-right-controls">
+          <button
+            type="button"
+            className={`hud-float-button ${isMenuOpen ? "is-active" : ""}`}
+            onClick={() => setIsMenuOpen((open) => !open)}
+            aria-expanded={isMenuOpen}
+          >
+            Menu
+          </button>
+          {isMenuOpen ? (
+            <section className="overlay-panel hud-menu-panel">
+              <div className="hud-menu-title">Audio</div>
+              <div className="hud-menu-audio">
+                <AudioControl
+                  label="Hit"
+                  value={audioMix.hit.volume}
+                  onChange={(value) => setAudioVolume("hit", value)}
+                />
+                <AudioControl
+                  label="Ref"
+                  value={audioMix.reference.volume}
+                  onChange={(value) => setAudioVolume("reference", value)}
+                />
+                <AudioControl
+                  label="Wrong"
+                  value={audioMix.wrong.volume}
+                  onChange={(value) => setAudioVolume("wrong", value)}
+                />
+              </div>
+              <button type="button" className="hint-button" onClick={applySolution}>
+                Show Solution
+              </button>
+            </section>
+          ) : null}
+        </div>
+      </div>
+
+      {showPaths ? (
+        <section className="overlay-panel hud-timeline-panel">
+          <div className="hud-timeline-multilane" title="Rows are timbres. Filled area is target groove. Line is produced groove. Height uses note velocity/animal weight.">
+            {laneKeys.map((lane) => (
+              <RhythmLane
+                key={lane}
+                lane={lane}
+                loopBeats={level.loopBeats}
+                currentBeat={currentBeat}
+                target={level.targetRhythm.filter((note) => note.timbre === lane)}
+                produced={simulation.producedTriggers.filter((trigger) => trigger.timbre === lane)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <div className={`hud-level-overlay ${isLevelDrawerOpen ? "is-open" : ""}`} aria-hidden={!isLevelDrawerOpen}>
+        <button
+          type="button"
+          className="hud-level-scrim"
+          aria-label="Close level list"
+          onClick={() => setIsLevelDrawerOpen(false)}
+          tabIndex={isLevelDrawerOpen ? 0 : -1}
+        />
+        <aside className="overlay-panel hud-level-drawer">
+          <div className="hud-level-drawer-head">
+            <h2>Levels</h2>
+            <button type="button" className="hud-float-button" onClick={createRandomLevel} title="Generate a random test level">
               Random
             </button>
           </div>
-          <div className="hud-group hud-button-group">
-            <button type="button" onClick={resetPlacements}>
-              Reset
-            </button>
-            <button type="button" className={`hint-button ${showPaths ? "is-active" : ""}`} onClick={togglePaths}>
-              Hint
-            </button>
-          </div>
-          <div className="hud-group hud-mix-group">
-            <AudioControl
-              label="Hit"
-              value={audioMix.hit.volume}
-              muted={audioMix.hit.muted}
-              onChange={(value) => setAudioVolume("hit", value)}
-              onToggleMute={() => toggleAudioMute("hit")}
-            />
-            <AudioControl
-              label="Ref"
-              value={audioMix.reference.volume}
-              muted={audioMix.reference.muted}
-              onChange={(value) => setAudioVolume("reference", value)}
-              onToggleMute={() => toggleAudioMute("reference")}
-            />
-            <AudioControl
-              label="Wrong"
-              value={audioMix.wrong.volume}
-              muted={audioMix.wrong.muted}
-              onChange={(value) => setAudioVolume("wrong", value)}
-              onToggleMute={() => toggleAudioMute("wrong")}
-            />
-          </div>
-        </div>
-        {showPaths ? (
-          <div className="hud-row hud-timeline-row">
-            <div className="hud-timeline-multilane" title="Rows are timbres. Filled area is target groove. Line is produced groove. Height uses note velocity/animal weight.">
-              {laneKeys.map((lane) => (
-                <RhythmLane
-                  key={lane}
-                  lane={lane}
-                  loopBeats={level.loopBeats}
-                  currentBeat={currentBeat}
-                  target={level.targetRhythm.filter((note) => note.timbre === lane)}
-                  produced={simulation.producedTriggers.filter((trigger) => trigger.timbre === lane)}
-                />
-              ))}
-            </div>
-          </div>
-        ) : null}
-      </header>
-      <div className="hud-gauge-row">
-        <aside className="hud-match-gauge" title="Curve match score">
-          <div className="hud-match-value">{Math.round(matchPercent)}%</div>
-          <div className="hud-match-track">
-            <div className="hud-match-fill" style={{ height: `${Math.max(0, Math.min(100, matchPercent))}%` }} />
+          <div className="hud-level-card-list">
+            {levels.map((entry, index) => (
+              <button
+                key={entry.id}
+                type="button"
+                className={`hud-level-card ${entry.id === activeLevelId ? "is-active" : ""}`}
+                onClick={() => setActiveLevel(entry.id)}
+              >
+                <span className="hud-level-card-index">{String(index + 1).padStart(2, "0")}</span>
+                <span className="hud-level-card-name">{entry.name}</span>
+                <span className="hud-level-card-copy">Tap to load</span>
+              </button>
+            ))}
           </div>
         </aside>
       </div>
@@ -131,15 +172,13 @@ function RhythmLane({ lane, loopBeats, currentBeat, target, produced }: RhythmLa
 type AudioControlProps = {
   label: string;
   value: number;
-  muted: boolean;
   onChange: (value: number) => void;
-  onToggleMute: () => void;
 };
 
-/** Renders one audio channel control row with a volume slider and mute toggle. */
-function AudioControl({ label, value, muted, onChange, onToggleMute }: AudioControlProps) {
+/** Renders one audio channel slider row. */
+function AudioControl({ label, value, onChange }: AudioControlProps) {
   return (
-    <label className={`audio-control ${muted ? "is-muted" : ""}`} title={`${label} volume`}>
+    <label className="audio-control" title={`${label} volume`}>
       <span className="audio-label">{label}</span>
       <input
         className="audio-slider"
@@ -150,9 +189,6 @@ function AudioControl({ label, value, muted, onChange, onToggleMute }: AudioCont
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
       />
-      <button type="button" className={`audio-mute ${muted ? "is-active" : ""}`} onClick={onToggleMute} aria-pressed={muted}>
-        Mute
-      </button>
     </label>
   );
 }

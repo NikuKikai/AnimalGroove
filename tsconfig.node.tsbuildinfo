@@ -1,1 +1,1 @@
-{"root":["./vite.config.ts","./scripts/generate-groove.ts","./scripts/generate-level-from-groove.ts","./scripts/solve-level.ts","./test/simulation.test.ts"],"errors":true,"version":"5.9.3"}
+{"root":["./vite.config.ts","./scripts/generate-groove.ts","./scripts/generate-level-from-groove.ts","./scripts/generate-level-from-paths.ts","./scripts/solve-level.ts","./test/simulation.test.ts"],"version":"5.9.3"}
