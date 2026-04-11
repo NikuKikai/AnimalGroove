@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { loadCompletedLevelIds, markLevelCompleted } from "../game/persistence/levelProgress";
 import { getActiveLevel, useGameStore } from "../game/state/gameStore";
 import { HudLevelDrawer } from "./hud/HudLevelDrawer";
 import { HudTimelinePanel } from "./hud/HudTimelinePanel";
@@ -21,9 +22,56 @@ export function Hud() {
   const applySolution = useGameStore((state) => state.applySolution);
   const [isLevelDrawerOpen, setIsLevelDrawerOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [completedLevelIds, setCompletedLevelIds] = useState<Set<string>>(new Set());
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const previousSolvedRef = useRef(false);
 
   const level = getActiveLevel({ activeLevelId, levels });
   const matchPercent = computeCurveMatchPercent(level.targetRhythm, simulation.producedTriggers, level.loopBeats);
+  const isSolvedNow = matchPercent >= 99.999;
+  const isGeneratedLevel = activeLevelId.startsWith("generated-");
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCompletedLevelIds()
+      .then((ids) => {
+        if (!cancelled) {
+          setCompletedLevelIds(ids);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSolvedNow || previousSolvedRef.current) {
+      previousSolvedRef.current = isSolvedNow;
+      return;
+    }
+
+    setShowClearDialog(true);
+    if (isGeneratedLevel) {
+      setCompletedLevelIds((prev) => {
+        const next = new Set(prev);
+        next.add(activeLevelId);
+        return next;
+      });
+    } else {
+      markLevelCompleted(activeLevelId)
+        .then((ids) => {
+          setCompletedLevelIds(ids);
+        })
+        .catch(() => undefined);
+    }
+
+    previousSolvedRef.current = true;
+  }, [activeLevelId, isGeneratedLevel, isSolvedNow]);
+
+  useEffect(() => {
+    previousSolvedRef.current = isSolvedNow;
+  }, [activeLevelId, isSolvedNow]);
 
   return (
     <div className="hud-root">
@@ -51,12 +99,26 @@ export function Hud() {
 
       <HudLevelDrawer
         activeLevelId={activeLevelId}
+        completedLevelIds={completedLevelIds}
         isOpen={isLevelDrawerOpen}
         levels={levels}
         onClose={() => setIsLevelDrawerOpen(false)}
         onCreateRandomLevel={createRandomLevel}
         onSelectLevel={setActiveLevel}
       />
+
+      {showClearDialog ? (
+        <div className="hud-clear-overlay" role="dialog" aria-modal="true" aria-label="Level completed">
+          <div className="overlay-panel hud-clear-dialog">
+            <div className="hud-clear-title">Level Complete</div>
+            <div className="hud-clear-name">{level.name}</div>
+            <div className="hud-clear-score">{Math.round(matchPercent)}%</div>
+            <button type="button" className="hud-float-button" onClick={() => setShowClearDialog(false)}>
+              Continue
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -250,6 +250,14 @@ select {
     border-color: rgba(127, 209, 185, 0.65);
     background: rgba(127, 209, 185, 0.15);
 }
+.hud-level-card-copy {
+    font-size: 11px;
+    opacity: 0.65;
+}
+.hud-level-card-copy.is-completed {
+    color: #9de3cc;
+    opacity: 0.95;
+}
 
 .hud-level-card-index {
     grid-column: 1;
@@ -263,9 +271,53 @@ select {
     font-size: 14px;
 }
 
-.hud-level-card-copy {
-    font-size: 11px;
-    opacity: 0.65;
+.hud-clear-overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: auto;
+    background: rgba(3, 8, 10, 0.36);
+    z-index: 30;
+}
+
+.hud-clear-dialog {
+    width: min(320px, calc(100vw - 32px));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    animation: clear-pop 220ms ease-out;
+}
+
+.hud-clear-title {
+    font-size: 18px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.hud-clear-name {
+    font-size: 14px;
+    opacity: 0.85;
+}
+
+.hud-clear-score {
+    font-size: 30px;
+    line-height: 1;
+    color: #9de3cc;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 24px rgba(127, 209, 185, 0.5);
+}
+
+@keyframes clear-pop {
+    0% {
+        transform: translateY(8px) scale(0.96);
+        opacity: 0;
+    }
+    100% {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
 }
 
 button {

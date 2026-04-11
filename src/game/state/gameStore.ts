@@ -6,6 +6,61 @@ import type { LevelDefinition, Placement, SimulationResult } from "../types";
 export type AudioChannelKey = "hit" | "reference" | "wrong";
 
 export type AudioMixState = Record<AudioChannelKey, { volume: number; muted: boolean }>;
+const AUDIO_MIX_STORAGE_KEY = "animal-groove-audio-mix";
+
+/** Returns the default audio mix used when there is no persisted user preference. */
+function getDefaultAudioMix(): AudioMixState {
+  return {
+    hit: { volume: 1.05, muted: false },
+    reference: { volume: 0.18, muted: false },
+    wrong: { volume: 0.4, muted: false },
+  };
+}
+
+/** Attempts to load persisted audio mix preferences from localStorage. */
+function loadPersistedAudioMix(): AudioMixState {
+  if (typeof window === "undefined") {
+    return getDefaultAudioMix();
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AUDIO_MIX_STORAGE_KEY);
+    if (!raw) {
+      return getDefaultAudioMix();
+    }
+
+    const parsed = JSON.parse(raw) as Partial<AudioMixState>;
+    const defaults = getDefaultAudioMix();
+    return {
+      hit: {
+        volume: typeof parsed.hit?.volume === "number" ? parsed.hit.volume : defaults.hit.volume,
+        muted: typeof parsed.hit?.muted === "boolean" ? parsed.hit.muted : defaults.hit.muted,
+      },
+      reference: {
+        volume: typeof parsed.reference?.volume === "number" ? parsed.reference.volume : defaults.reference.volume,
+        muted: typeof parsed.reference?.muted === "boolean" ? parsed.reference.muted : defaults.reference.muted,
+      },
+      wrong: {
+        volume: typeof parsed.wrong?.volume === "number" ? parsed.wrong.volume : defaults.wrong.volume,
+        muted: typeof parsed.wrong?.muted === "boolean" ? parsed.wrong.muted : defaults.wrong.muted,
+      },
+    };
+  } catch {
+    return getDefaultAudioMix();
+  }
+}
+
+/** Persists the current audio mix preferences to localStorage. */
+function persistAudioMix(audioMix: AudioMixState) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(AUDIO_MIX_STORAGE_KEY, JSON.stringify(audioMix));
+  } catch {
+    // Ignore storage failures so audio controls remain functional.
+  }
+}
 
 type GameState = {
   levels: LevelDefinition[];
@@ -85,11 +140,7 @@ export const useGameStore = create<GameState>((set, get) => {
     hintEnabled: false,
     currentBeat: 0,
     simulation: computeSimulation(initialLevel, initialPlacements),
-    audioMix: {
-      hit: { volume: 1.05, muted: false },
-      reference: { volume: 0.18, muted: false },
-      wrong: { volume: 0.4, muted: false },
-    },
+    audioMix: loadPersistedAudioMix(),
     setActiveLevel: (levelId) => {
       const nextLevel = getLevelById(get().levels, levelId);
       const placements = getInitialPlacements(nextLevel);
@@ -171,25 +222,29 @@ export const useGameStore = create<GameState>((set, get) => {
         };
       }),
     setAudioVolume: (channel, volume) =>
-      set((state) => ({
-        audioMix: {
+      set((state) => {
+        const nextMix = {
           ...state.audioMix,
           [channel]: {
             ...state.audioMix[channel],
             volume,
           },
-        },
-      })),
+        };
+        persistAudioMix(nextMix);
+        return { audioMix: nextMix };
+      }),
     toggleAudioMute: (channel) =>
-      set((state) => ({
-        audioMix: {
+      set((state) => {
+        const nextMix = {
           ...state.audioMix,
           [channel]: {
             ...state.audioMix[channel],
             muted: !state.audioMix[channel].muted,
           },
-        },
-      })),
+        };
+        persistAudioMix(nextMix);
+        return { audioMix: nextMix };
+      }),
     startDrag: (pieceId, blockId, pointer, rotation = 0) =>
       set({
         draggingPieceId: pieceId,

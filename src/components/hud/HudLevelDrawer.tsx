@@ -2,6 +2,7 @@ import type { LevelDefinition } from "../../game/types";
 
 type HudLevelDrawerProps = {
   activeLevelId: string;
+  completedLevelIds: Set<string>;
   isOpen: boolean;
   levels: LevelDefinition[];
   onClose: () => void;
@@ -12,6 +13,7 @@ type HudLevelDrawerProps = {
 /** Renders the left-side level drawer and dimmed outside area. */
 export function HudLevelDrawer({
   activeLevelId,
+  completedLevelIds,
   isOpen,
   levels,
   onClose,
@@ -38,7 +40,9 @@ export function HudLevelDrawer({
             >
               <span className="hud-level-card-index">{String(index + 1).padStart(2, "0")}</span>
               <span className="hud-level-card-name">{entry.name}</span>
-              <span className="hud-level-card-copy">Tap to load</span>
+              <span className={`hud-level-card-copy ${completedLevelIds.has(entry.id) ? "is-completed" : ""}`}>
+                {completedLevelIds.has(entry.id) ? "Completed" : "Tap to load"}
+              </span>
             </button>
           ))}
         </div>
