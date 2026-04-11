@@ -5,8 +5,8 @@ const groove = generateGroove({
   bpm: Number(process.argv[2] ?? 112),
   loopBeats: Number(process.argv[3] ?? 8),
   density: Number(process.argv[4] ?? 0.5),
-  lanes: ["drums", "perc"],
-  timbres: ["kick", "snare", "hat"],
+  lanes: ["drums", "perc", "foley"],
+  timbres: ["kick", "snare", "hat", "sand", "puddle"],
   seed: Number(process.argv[5] ?? 1),
 });
 

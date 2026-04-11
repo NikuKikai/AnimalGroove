@@ -4,7 +4,7 @@ import { evaluatePlacements, generateLevelFromGroove, generateLevelFromPaths, so
 import type { RhythmEvent } from "../src/game/types";
 
 const tutorialKickPieces = tutorialLevel.blocks
-  .filter((block) => block.blockId === "kick-single")
+  .filter((block) => block.blockId === "sand-single")
   .map((block) => block.pieceId);
 
 describe("simulation", () => {
@@ -74,8 +74,8 @@ describe("simulation", () => {
 
   it("triggers adjacent same-block placements independently", () => {
     const result = evaluatePlacements(tutorialLevel, [
-      { blockId: "kick-single", pieceId: tutorialKickPieces[0]!, origin: { x: 1, y: 1 }, rotation: 0 },
-      { blockId: "kick-single", pieceId: tutorialKickPieces[1]!, origin: { x: 3, y: 1 }, rotation: 0 },
+      { blockId: "sand-single", pieceId: tutorialKickPieces[0]!, origin: { x: 1, y: 1 }, rotation: 0 },
+      { blockId: "sand-single", pieceId: tutorialKickPieces[1]!, origin: { x: 3, y: 1 }, rotation: 0 },
     ]);
 
     expect(result.producedTriggers).toHaveLength(2);
@@ -86,8 +86,8 @@ describe("simulation", () => {
 
   it("does not suppress a later correct trigger after an earlier wrong trigger of the same block type", () => {
     const result = evaluatePlacements(tutorialLevel, [
-      { blockId: "kick-single", pieceId: tutorialKickPieces[0]!, origin: { x: 3, y: 1 }, rotation: 0 },
-      { blockId: "kick-single", pieceId: tutorialKickPieces[1]!, origin: { x: 3, y: 3 }, rotation: 0 },
+      { blockId: "sand-single", pieceId: tutorialKickPieces[0]!, origin: { x: 3, y: 1 }, rotation: 0 },
+      { blockId: "sand-single", pieceId: tutorialKickPieces[1]!, origin: { x: 3, y: 3 }, rotation: 0 },
     ]);
 
     expect(result.producedTriggers).toHaveLength(2);

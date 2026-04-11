@@ -10,6 +10,7 @@ export type LevelBlockDraft = {
   color: string;
   solutionOrigin: Vec2;
   solutionRotation: 0 | 90;
+  includeInSolution?: boolean;
 };
 
 type MaterializedLevelLayout = {
@@ -58,12 +59,15 @@ export function materializeLevelLayout(
     };
   });
 
-  const referenceSolution: Placement[] = blockDrafts.map((draft, index) => ({
-    blockId: draft.blockId,
-    pieceId: `${draft.blockId}-${index}`,
-    origin: draft.solutionOrigin,
-    rotation: draft.solutionRotation,
-  }));
+  const referenceSolution: Placement[] = blockDrafts
+    .map((draft, index) => ({ draft, index }))
+    .filter(({ draft }) => draft.includeInSolution !== false)
+    .map(({ draft, index }) => ({
+      blockId: draft.blockId,
+      pieceId: `${draft.blockId}-${index}`,
+      origin: draft.solutionOrigin,
+      rotation: draft.solutionRotation,
+    }));
 
   return normalizeLevelLayout(animals, blocks, referenceSolution, options.blockedCells ?? []);
 }

@@ -128,7 +128,30 @@ export const useGameStore = create<GameState>((set, get) => {
     },
     applySolution: () => {
       const level = getLevelById(get().levels, get().activeLevelId);
-      const placements = level.referenceSolution ?? solveLevel(level).placements;
+      const solvedPlacements = level.referenceSolution ?? solveLevel(level).placements;
+      const currentByPiece = new Map(get().placements.map((placement) => [placement.pieceId, placement]));
+      const solutionPieceIds = new Set(solvedPlacements.map((placement) => placement.pieceId));
+      const placements = get().placements.map((placement) => {
+        const solved = solvedPlacements.find((candidate) => candidate.pieceId === placement.pieceId);
+        return solved ?? placement;
+      });
+
+      for (const solved of solvedPlacements) {
+        if (currentByPiece.has(solved.pieceId)) {
+          continue;
+        }
+        placements.push(solved);
+      }
+
+      for (const block of level.blocks) {
+        if (solutionPieceIds.has(block.pieceId)) {
+          continue;
+        }
+        if (placements.some((placement) => placement.pieceId === block.pieceId)) {
+          continue;
+        }
+        placements.push(block.initialPlacement);
+      }
       set({
         placements,
         draggingPieceId: undefined,

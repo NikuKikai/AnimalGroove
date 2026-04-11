@@ -28,8 +28,8 @@ export function generateGroove(options: GrooveGenerationOptions): RhythmEvent[] 
       continue;
     }
 
-    const lane = options.lanes[step % options.lanes.length];
-    const timbre = options.timbres[(step + Math.floor(rng() * options.timbres.length)) % options.timbres.length];
+    const timbre = pickTimbre(options.timbres, rng);
+    const lane = inferLaneFromTimbre(timbre, options.lanes);
     notes.push({
       id: `groove-${step}`,
       lane,
@@ -40,4 +40,57 @@ export function generateGroove(options: GrooveGenerationOptions): RhythmEvent[] 
   }
 
   return notes;
+}
+
+/** Picks one timbre using a weighted distribution that favors drum timbres over foley timbres. */
+function pickTimbre(timbres: string[], rng: () => number) {
+  if (timbres.length === 0) {
+    return "kick";
+  }
+
+  const weighted = timbres.map((timbre) => ({
+    timbre,
+    weight: getTimbreWeight(timbre),
+  }));
+  const totalWeight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  let cursor = rng() * totalWeight;
+  for (const entry of weighted) {
+    cursor -= entry.weight;
+    if (cursor <= 0) {
+      return entry.timbre;
+    }
+  }
+  return weighted[weighted.length - 1].timbre;
+}
+
+/** Returns a stable generation weight for one timbre family. */
+function getTimbreWeight(timbre: string) {
+  switch (timbre.toLowerCase()) {
+    case "kick":
+      return 1.55;
+    case "snare":
+      return 1.3;
+    case "hat":
+      return 1.1;
+    case "sand":
+      return 0.55;
+    case "puddle":
+      return 0.5;
+    case "leaf":
+      return 0.42;
+    default:
+      return 0.9;
+  }
+}
+
+/** Resolves a lane from timbre first, then falls back to configured lanes. */
+function inferLaneFromTimbre(timbre: string, lanes: string[]) {
+  const normalized = timbre.toLowerCase();
+  if (normalized === "sand" || normalized === "puddle" || normalized === "leaf") {
+    return lanes.includes("foley") ? "foley" : lanes[0] ?? "foley";
+  }
+  if (normalized === "hat") {
+    return lanes.includes("perc") ? "perc" : lanes[0] ?? "perc";
+  }
+  return lanes.includes("drums") ? "drums" : lanes[0] ?? "drums";
 }

@@ -11,6 +11,8 @@ const timbrePalette = {
   kick: "#ffaf45",
   snare: "#58c4dd",
   hat: "#ffc857",
+  sand: "#d4b483",
+  puddle: "#5f9ed6",
 };
 
 type PathFirstGenerationOptions = {
@@ -35,7 +37,8 @@ type RectanglePlacementDraft = {
   origin: Vec2;
   width: number;
   height: number;
-  timbre: "kick" | "snare" | "hat";
+  timbre: "kick" | "snare" | "hat" | "sand" | "puddle";
+  includeInSolution?: boolean;
 };
 
 type CandidateRectangle = RectanglePlacementDraft & {
@@ -74,7 +77,7 @@ export function generateLevelFromPaths(id: string, options: PathFirstGenerationO
     .sort((left, right) => left.beat - right.beat || left.id.localeCompare(right.id))
     .map((trigger, index) => ({
       id: `path-note-${index}`,
-      lane: trigger.timbre === "hat" ? "perc" : "drums",
+      lane: trigger.timbre === "hat" ? "perc" : trigger.timbre === "sand" || trigger.timbre === "puddle" ? "foley" : "drums",
       beat: Number(trigger.beat.toFixed(3)),
       timbre: trigger.timbre,
       velocity: Math.min(1.2, 0.6 + trigger.weight * 0.3),
@@ -129,7 +132,7 @@ function buildStructuredPlacements(
 ) {
   const candidates = enumerateCandidateRectangles(cellStats, animals, loopBeats, rng);
   const selected: CandidateRectangle[] = [];
-  const targetCount = Math.min(Math.max(animals.length * 2, 5), 8);
+  const targetCount = getTargetBlockCount(loopBeats, animals.length);
   const shapeUsage = new Map<string, number>();
   const heatBuckets = bucketCandidatesByHeat(candidates);
   const spatialBuckets = bucketCandidatesByRegion(candidates);
@@ -169,7 +172,15 @@ function buildStructuredPlacements(
   }
 
   ensureCoreTimbres(selected, candidates);
-  return pruneRectangles(selected, animals, loopBeats);
+  ensureFoleyAccent(selected, candidates);
+  const pruned = pruneRectangles(selected, animals, loopBeats);
+  const expanded = expandRoutePlacements(pruned, candidates, animals, loopBeats, targetCount);
+  if (expanded.length >= targetCount) {
+    return expanded;
+  }
+
+  const decoys = buildDecoyPlacements(expanded, animals, targetCount - expanded.length, rng);
+  return [...expanded, ...decoys];
 }
 
 /** Expands rectangle drafts into concrete movable block instances. */
@@ -184,8 +195,149 @@ function buildBlockDrafts(rectangles: RectanglePlacementDraft[]) {
     color: timbrePalette[draft.timbre],
     solutionOrigin: draft.origin,
     solutionRotation: 0 as const,
+    includeInSolution: draft.includeInSolution !== false,
     sortIndex: index,
   })).sort((left, right) => left.sortIndex - right.sortIndex).map(({ sortIndex: _sortIndex, ...draft }) => draft);
+}
+
+/** Computes a block-count target from timeline length, biased slightly high for puzzle variety. */
+function getTargetBlockCount(loopBeats: number, animalCount: number) {
+  return Math.max(6, Math.min(16, Math.round(loopBeats * 1.25 + animalCount)));
+}
+
+/** Tries to add more route-covered solution blocks while keeping resulting rhythm density readable. */
+function expandRoutePlacements(
+  seed: RectanglePlacementDraft[],
+  candidates: CandidateRectangle[],
+  animals: AnimalDefinition[],
+  loopBeats: number,
+  targetCount: number,
+) {
+  const expanded = [...seed];
+  const sortedCandidates = [...candidates].sort((left, right) => right.score - left.score);
+  for (const candidate of sortedCandidates) {
+    if (expanded.length >= targetCount) {
+      break;
+    }
+    if (expanded.some((entry) => rectanglesOverlap(entry, candidate))) {
+      continue;
+    }
+
+    const next = [...expanded, candidate];
+    if (evaluateRectanglesRhythmPenalty(next, animals, loopBeats) > 2.65) {
+      continue;
+    }
+    expanded.push(candidate);
+  }
+  return expanded;
+}
+
+/** Estimates rhythm distribution penalty produced by rectangles directly from path visits. */
+function evaluateRectanglesRhythmPenalty(
+  rectangles: RectanglePlacementDraft[],
+  animals: AnimalDefinition[],
+  loopBeats: number,
+) {
+  const beats: number[] = [];
+  for (const rectangle of rectangles) {
+    for (const animal of animals) {
+      for (const visit of sampleAnimalPathVisits(animal, loopBeats)) {
+        if (
+          visit.cell.x >= rectangle.origin.x &&
+          visit.cell.x < rectangle.origin.x + rectangle.width &&
+          visit.cell.y >= rectangle.origin.y &&
+          visit.cell.y < rectangle.origin.y + rectangle.height
+        ) {
+          beats.push(visit.beat);
+        }
+      }
+    }
+  }
+  return evaluateRhythmDistribution(beats, loopBeats);
+}
+
+/** Builds non-solution decoy blocks in empty space when route placements cannot hit the target count. */
+function buildDecoyPlacements(
+  selected: RectanglePlacementDraft[],
+  animals: AnimalDefinition[],
+  neededCount: number,
+  rng: () => number,
+) {
+  if (neededCount <= 0) {
+    return [];
+  }
+
+  const pathCells = new Set<string>();
+  for (const animal of animals) {
+    for (const point of animal.path.waypoints) {
+      pathCells.add(cellKey(point));
+    }
+  }
+
+  const occupied = new Set<string>();
+  for (const block of selected) {
+    for (let y = 0; y < block.height; y += 1) {
+      for (let x = 0; x < block.width; x += 1) {
+        occupied.add(cellKey({ x: block.origin.x + x, y: block.origin.y + y }));
+      }
+    }
+  }
+
+  const allPathPoints = animals.flatMap((animal) => animal.path.waypoints);
+  const minX = Math.min(...allPathPoints.map((point) => point.x));
+  const maxX = Math.max(...allPathPoints.map((point) => point.x));
+  const minY = Math.min(...allPathPoints.map((point) => point.y));
+  const maxY = Math.max(...allPathPoints.map((point) => point.y));
+
+  const decoys: RectanglePlacementDraft[] = [];
+  const timbres: Array<"kick" | "snare" | "hat" | "sand" | "puddle"> = ["kick", "snare", "hat", "sand", "puddle"];
+  let attempts = 0;
+  while (decoys.length < neededCount && attempts < neededCount * 120) {
+    attempts += 1;
+    const ring = 2 + Math.floor(rng() * 5);
+    const side = Math.floor(rng() * 4);
+    const width = rng() < 0.7 ? 1 : 2;
+    const height = width === 1 && rng() < 0.28 ? 2 : 1;
+    const timbre = timbres[Math.floor(rng() * timbres.length)] ?? "kick";
+
+    const origin =
+      side === 0
+        ? { x: minX - ring, y: minY + Math.floor(rng() * (maxY - minY + 1)) }
+        : side === 1
+          ? { x: maxX + ring, y: minY + Math.floor(rng() * (maxY - minY + 1)) }
+          : side === 2
+            ? { x: minX + Math.floor(rng() * (maxX - minX + 1)), y: minY - ring }
+            : { x: minX + Math.floor(rng() * (maxX - minX + 1)), y: maxY + ring };
+
+    const draft: RectanglePlacementDraft = {
+      origin,
+      width,
+      height,
+      timbre,
+      includeInSolution: false,
+    };
+
+    if (selected.some((entry) => rectanglesOverlap(entry, draft)) || decoys.some((entry) => rectanglesOverlap(entry, draft))) {
+      continue;
+    }
+
+    let overlapsPath = false;
+    for (let y = 0; y < draft.height && !overlapsPath; y += 1) {
+      for (let x = 0; x < draft.width; x += 1) {
+        const key = cellKey({ x: draft.origin.x + x, y: draft.origin.y + y });
+        if (pathCells.has(key) || occupied.has(key)) {
+          overlapsPath = true;
+          break;
+        }
+      }
+    }
+    if (overlapsPath) {
+      continue;
+    }
+
+    decoys.push(draft);
+  }
+  return decoys;
 }
 
 /** Aggregates all animal visits by board cell and scores them for compact, shared block placement. */
@@ -443,7 +595,7 @@ function chooseBestCandidate(
 
 /** Ensures the final selection includes kick and snare when the candidate pool allows it. */
 function ensureCoreTimbres(selected: CandidateRectangle[], candidates: CandidateRectangle[]) {
-  const required: Array<"kick" | "snare"> = ["kick", "snare"];
+  const required: Array<"kick" | "snare" | "hat"> = ["kick", "snare", "hat"];
 
   for (const timbre of required) {
     if (selected.some((entry) => entry.timbre === timbre)) {
@@ -459,7 +611,9 @@ function ensureCoreTimbres(selected: CandidateRectangle[], candidates: Candidate
       continue;
     }
 
-    const removableIndex = selected.findIndex((entry) => entry.timbre === "hat");
+    const removableIndex = selected.findIndex(
+      (entry) => entry.timbre === "sand" || entry.timbre === "puddle",
+    );
     if (removableIndex >= 0) {
       selected.splice(removableIndex, 1, replacement);
     } else {
@@ -468,38 +622,77 @@ function ensureCoreTimbres(selected: CandidateRectangle[], candidates: Candidate
   }
 }
 
+/** Ensures at least one foley rectangle remains as an accent when candidates allow it. */
+function ensureFoleyAccent(selected: CandidateRectangle[], candidates: CandidateRectangle[]) {
+  if (selected.some((entry) => entry.timbre === "sand" || entry.timbre === "puddle")) {
+    return;
+  }
+
+  const accent = candidates.find(
+    (entry) =>
+      (entry.timbre === "sand" || entry.timbre === "puddle") &&
+      !selected.some((picked) => rectanglesOverlap(picked, entry)),
+  );
+  if (!accent) {
+    return;
+  }
+
+  const removableIndex = selected.findIndex((entry) => entry.timbre === "hat");
+  if (removableIndex >= 0) {
+    selected.splice(removableIndex, 1, accent);
+    return;
+  }
+  selected.push(accent);
+}
+
 /** Assigns an instrument role to one rectangle from the beats that pass through it. */
-function chooseRectangleTimbre(stats: CellStat[], loopBeats: number, rng: () => number): "kick" | "snare" | "hat" {
+function chooseRectangleTimbre(
+  stats: CellStat[],
+  loopBeats: number,
+  rng: () => number,
+): "kick" | "snare" | "hat" | "sand" | "puddle" {
   const kickAnchors = [0, loopBeats / 2];
   const snareAnchors = [loopBeats / 4, (loopBeats * 3) / 4];
+  const puddleAnchors = [loopBeats / 8, (loopBeats * 5) / 8];
   let kickScore = 0;
   let snareScore = 0;
   let hatScore = 0;
+  let sandScore = 0;
+  let puddleScore = 0;
 
   for (const stat of stats) {
     for (const visit of stat.visits) {
       const beat = visit.beat;
       const nearestKick = Math.min(...kickAnchors.map((anchor) => circularDistance(beat, anchor, loopBeats)));
       const nearestSnare = Math.min(...snareAnchors.map((anchor) => circularDistance(beat, anchor, loopBeats)));
+      const nearestPuddle = Math.min(...puddleAnchors.map((anchor) => circularDistance(beat, anchor, loopBeats)));
       kickScore += Math.max(0, 1.3 - nearestKick * 2.5);
       snareScore += Math.max(0, 1.1 - nearestSnare * 2.4);
       hatScore += 0.45 + (Math.abs(beat * 4 - Math.round(beat * 4)) < 0.001 ? 0.6 : 0);
+      sandScore += 0.55 + Math.max(0, 0.55 - nearestKick * 1.55);
+      puddleScore += 0.5 + Math.max(0, 0.5 - nearestPuddle * 1.4);
     }
   }
 
   kickScore += 0.2 + rng() * 0.08;
   snareScore += 0.16 + rng() * 0.08;
   hatScore += rng() * 0.06;
+  sandScore += 0.14 + rng() * 0.06;
+  puddleScore += 0.12 + rng() * 0.06;
 
-  if (kickScore >= snareScore && kickScore >= hatScore) {
-    return "kick";
-  }
+  // Keep foley as accents in generated puzzles.
+  sandScore *= 0.62;
+  puddleScore *= 0.58;
 
-  if (snareScore >= hatScore) {
-    return "snare";
-  }
-
-  return "hat";
+  const ordered = [
+    ["kick", kickScore],
+    ["snare", snareScore],
+    ["hat", hatScore],
+    ["sand", sandScore],
+    ["puddle", puddleScore],
+  ] as const;
+  ordered.sort((left, right) => right[1] - left[1]);
+  return ordered[0][0];
 }
 
 /** Removes some rectangles if the derived groove would become too dense for a readable puzzle. */

@@ -4,7 +4,22 @@ import type { AudioChannelKey, AudioMixState } from "../state/gameStore";
 
 type VoiceStyle = "hit" | "wrong" | "reference";
 
-/** Owns the synth graph used for reference, hit, and wrong-note playback. */
+type ChannelNode = {
+  synth: Tone.Synth;
+  input: Tone.Gain;
+  filter?: Tone.Filter;
+  gain: Tone.Gain;
+  foleyPlayers: Map<string, Tone.Player>;
+};
+
+const foleySourceMap: Record<string, string> = {
+  sand: "./SE/step_sand.mp3",
+  puddle: "./SE/step_puddle.mp3",
+  leaf: "./SE/step_leaf.mp3",
+};
+const foleyGainFactor = 0.72;
+
+/** Owns the synth and sample graph used for reference, hit, and wrong-note playback. */
 export class AudioEngine {
   private started = false;
 
@@ -24,7 +39,10 @@ export class AudioEngine {
       return;
     }
 
+    Tone.getContext().lookAhead = 0.01;
+    Tone.getContext().updateInterval = 0.01;
     await Tone.start();
+    await Tone.loaded();
     this.started = true;
     this.lastScheduledTime = Tone.now();
   }
@@ -44,7 +62,7 @@ export class AudioEngine {
     }
 
     try {
-      this.playOneShot("reference", mapTimbreToPitch(note.timbre), this.nextTime(), 0.45);
+      this.playOneShot("reference", note.timbre, this.nextTime(), 0.45);
     } catch {
       return;
     }
@@ -59,7 +77,7 @@ export class AudioEngine {
     try {
       this.playOneShot(
         matched ? "hit" : "wrong",
-        mapTimbreToPitch(trigger.timbre),
+        trigger.timbre,
         this.nextTime(),
         (matched ? 0.95 : 0.5) * trigger.weight,
       );
@@ -68,8 +86,8 @@ export class AudioEngine {
     }
   }
 
-  /** Dispatches one synth hit through the requested channel graph. */
-  private playOneShot(style: VoiceStyle, pitch: string, time: number, velocity: number) {
+  /** Dispatches one note to either synth or foley player through the requested channel graph. */
+  private playOneShot(style: VoiceStyle, timbre: string, time: number, velocity: number) {
     const channel = style as AudioChannelKey;
     const mixState = this.mix[channel];
     if (mixState.muted || mixState.volume <= 0) {
@@ -78,22 +96,58 @@ export class AudioEngine {
 
     const node = this.channelNodes[style];
     node.gain.gain.value = mixState.volume;
-    node.synth.triggerAttackRelease(pitch, getDuration(style), time, Math.min(1.8, Math.max(0.05, velocity)));
+
+    const normalizedTimbre = timbre.toLowerCase();
+    if (isFoleyTimbre(normalizedTimbre)) {
+      const player = node.foleyPlayers.get(normalizedTimbre);
+      if (!player || !player.loaded) {
+        return;
+      }
+      player.start(
+        time,
+        0,
+        undefined,
+        Math.min(1.8, Math.max(0.05, velocity)) * foleyGainFactor,
+      );
+      return;
+    }
+
+    node.synth.triggerAttackRelease(
+      mapTimbreToPitch(normalizedTimbre),
+      getDuration(style),
+      time,
+      Math.min(1.8, Math.max(0.05, velocity)),
+    );
   }
 
-  /** Creates reusable synth, filter, and gain nodes for each audio channel. */
-  private createChannelNodes(): Record<VoiceStyle, { synth: Tone.Synth; filter?: Tone.Filter; gain: Tone.Gain }> {
+  /** Creates reusable synth, filter, foley players, and gain nodes for each audio channel. */
+  private createChannelNodes(): Record<VoiceStyle, ChannelNode> {
     const createChannel = (style: VoiceStyle) => {
+      const input = new Tone.Gain(1);
       const synth = new Tone.Synth(getSynthConfig(style));
       const filter = getFilter(style);
       const gain = new Tone.Gain(this.mix[style].volume).toDestination();
       if (filter) {
-        synth.connect(filter);
+        input.connect(filter);
         filter.connect(gain);
       } else {
-        synth.connect(gain);
+        input.connect(gain);
       }
-      return { synth, filter, gain };
+
+      synth.connect(input);
+      const foleyPlayers = new Map<string, Tone.Player>();
+      for (const [timbre, source] of Object.entries(foleySourceMap)) {
+        const player = new Tone.Player({
+          url: source,
+          autostart: false,
+          retrigger: true,
+          fadeOut: 0.03,
+        });
+        player.connect(input);
+        foleyPlayers.set(timbre, player);
+      }
+
+      return { synth, input, filter, gain, foleyPlayers };
     };
 
     return {
@@ -105,11 +159,16 @@ export class AudioEngine {
 
   /** Returns a strictly increasing Tone.js schedule time. */
   private nextTime() {
-    const now = Tone.now() + 0.02;
-    const next = Math.max(now, this.lastScheduledTime + 0.002);
+    const now = Tone.now() + 0.003;
+    const next = Math.max(now, this.lastScheduledTime + 0.0005);
     this.lastScheduledTime = next;
     return next;
   }
+}
+
+/** Returns true when the timbre should play through foley samples. */
+function isFoleyTimbre(timbre: string) {
+  return timbre in foleySourceMap;
 }
 
 /** Returns the synth configuration used for a channel style. */
@@ -157,7 +216,7 @@ function getDuration(style: VoiceStyle) {
   }
 }
 
-/** Maps a timbre id to a simple synthesized pitch. */
+/** Maps instrument timbres to synthesized pitches. */
 function mapTimbreToPitch(timbre: string) {
   switch (timbre) {
     case "kick":

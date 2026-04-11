@@ -1,233 +1,295 @@
 import { defaultAnimalModelRegistry } from "../game/assets/modelAssets";
 import { defineLevel } from "../game/engine/levelDsl";
-import { materializeLevelLayout } from "../game/simulation/levelBlockLayout";
-import { generateGroove } from "../game/simulation";
-import type { AnimalDefinition } from "../game/types";
-
-const tutorialAnimals: AnimalDefinition[] = [
-  {
-    id: "fox-1",
-    name: "Fox",
-    animalType: "fox",
-    timbre: "kick",
-    path: {
-      waypoints: [
-        { x: 1, y: 1 },
-        { x: 3, y: 1 },
-        { x: 3, y: 3 },
-        { x: 1, y: 3 },
-      ],
-      cycleBeats: 4,
-    },
-  },
-];
-
-const tutorialLayout = materializeLevelLayout([...tutorialAnimals], [
-  {
-    blockId: "kick-single",
-    name: "Kick Pad",
-    width: 1,
-    height: 1,
-    timbre: "kick",
-    canRotate: true,
-    color: "#ffb347",
-    solutionOrigin: { x: 1, y: 1 },
-    solutionRotation: 0,
-  },
-  {
-    blockId: "kick-single",
-    name: "Kick Pad",
-    width: 1,
-    height: 1,
-    timbre: "kick",
-    canRotate: true,
-    color: "#ffb347",
-    solutionOrigin: { x: 3, y: 3 },
-    solutionRotation: 0,
-  },
-  {
-    blockId: "hat-domino",
-    name: "Hat Domino",
-    width: 2,
-    height: 1,
-    timbre: "hat",
-    canRotate: true,
-    color: "#7fd1b9",
-    solutionOrigin: { x: 4, y: 1 },
-    solutionRotation: 90,
-  },
-]);
+import { evaluatePlacements } from "../game/simulation";
 
 export const tutorialLevel = defineLevel({
   id: "tutorial",
   name: "Forest Warmup",
-  description: "One fox circles the clearing. Rebuild the terrain so the loop lands on the kick pattern.",
+  description: "One fox circles the clearing. Rebuild the terrain so the loop lands on the sand pattern.",
   bpm: 108,
   loopBeats: 4,
-  board: tutorialLayout.board,
-  animals: tutorialLayout.animals,
-  blocks: tutorialLayout.blocks,
+  board: {
+    width: 6,
+    height: 5,
+  },
+  animals: [
+    {
+      id: "fox-1",
+      name: "Fox",
+      animalType: "fox",
+      timbre: "kick",
+      path: {
+        waypoints: [
+          { x: 1, y: 1 },
+          { x: 3, y: 1 },
+          { x: 3, y: 3 },
+          { x: 1, y: 3 },
+        ],
+      },
+    },
+  ],
+  blocks: [
+    {
+      blockId: "sand-single",
+      pieceId: "sand-single-0",
+      name: "Sand Tile",
+      width: 1,
+      height: 1,
+      timbre: "sand",
+      canRotate: true,
+      color: "#d4b483",
+      initialPlacement: {
+        blockId: "sand-single",
+        pieceId: "sand-single-0",
+        origin: { x: 0, y: 4 },
+        rotation: 0,
+      },
+    },
+    {
+      blockId: "sand-single",
+      pieceId: "sand-single-1",
+      name: "Sand Tile",
+      width: 1,
+      height: 1,
+      timbre: "sand",
+      canRotate: true,
+      color: "#d4b483",
+      initialPlacement: {
+        blockId: "sand-single",
+        pieceId: "sand-single-1",
+        origin: { x: 5, y: 0 },
+        rotation: 0,
+      },
+    },
+    {
+      blockId: "hat-domino",
+      pieceId: "hat-domino-0",
+      name: "Hat Domino",
+      width: 2,
+      height: 1,
+      timbre: "hat",
+      canRotate: true,
+      color: "#7fd1b9",
+      initialPlacement: {
+        blockId: "hat-domino",
+        pieceId: "hat-domino-0",
+        origin: { x: 4, y: 4 },
+        rotation: 0,
+      },
+    },
+  ],
   targetRhythm: [
-    { id: "t-1", lane: "drums", beat: 0, timbre: "kick", velocity: 1 },
-    { id: "t-2", lane: "drums", beat: 2, timbre: "kick", velocity: 0.95 },
+    { id: "t-1", lane: "foley", beat: 0, timbre: "sand", velocity: 1 },
+    { id: "t-2", lane: "foley", beat: 2, timbre: "sand", velocity: 0.95 },
   ],
   judge: {
     beatTolerance: 0.12,
   },
   models: defaultAnimalModelRegistry,
-  referenceSolution: tutorialLayout.referenceSolution,
-});
-
-const ensembleGroove = generateGroove({
-  bpm: 112,
-  loopBeats: 8,
-  density: 0.55,
-  lanes: ["drums", "perc"],
-  timbres: ["kick", "snare", "hat"],
-  seed: 12,
-});
-
-const ensembleAnimals: AnimalDefinition[] = [
-  {
-    id: "panda-1",
-    name: "Panda",
-    animalType: "panda",
-    timbre: "kick",
-    path: {
-      waypoints: [
-        { x: 1, y: 1 },
-        { x: 2, y: 0 },
-        { x: 4, y: 0 },
-        { x: 5, y: 1 },
-        { x: 5, y: 2 },
-        { x: 4, y: 3 },
-        { x: 2, y: 3 },
-        { x: 1, y: 2 },
-      ],
-      cycleBeats: 8,
-    },
-  },
-  {
-    id: "cat-1",
-    name: "Cat",
-    animalType: "cat",
-    timbre: "snare",
-    path: {
-      waypoints: [
-        { x: 2, y: 3 },
-        { x: 3, y: 2 },
-        { x: 5, y: 2 },
-        { x: 6, y: 3 },
-        { x: 6, y: 5 },
-        { x: 5, y: 5 },
-        { x: 3, y: 5 },
-        { x: 2, y: 4 },
-      ],
-      cycleBeats: 8,
-      startPhaseBeat: 0.5,
-    },
-  },
-];
-
-const ensembleLayout = materializeLevelLayout(
-  [...ensembleAnimals],
-  [
-    {
-      blockId: "kick-tile",
-      name: "Kick Tile",
-      width: 1,
-      height: 1,
-      timbre: "kick",
-      canRotate: true,
-      color: "#ff9f68",
-      solutionOrigin: { x: 1, y: 1 },
-      solutionRotation: 0,
-    },
-    {
-      blockId: "kick-tile",
-      name: "Kick Tile",
-      width: 1,
-      height: 1,
-      timbre: "kick",
-      canRotate: true,
-      color: "#ff9f68",
-      solutionOrigin: { x: 5, y: 2 },
-      solutionRotation: 0,
-    },
-    {
-      blockId: "kick-tile",
-      name: "Kick Tile",
-      width: 1,
-      height: 1,
-      timbre: "kick",
-      canRotate: true,
-      color: "#ff9f68",
-      solutionOrigin: { x: 6, y: 3 },
-      solutionRotation: 0,
-    },
-    {
-      blockId: "snare-tile",
-      name: "Snare Tile",
-      width: 1,
-      height: 1,
-      timbre: "snare",
-      canRotate: true,
-      color: "#ffc857",
-      solutionOrigin: { x: 3, y: 2 },
-      solutionRotation: 0,
-    },
-    {
-      blockId: "snare-tile",
-      name: "Snare Tile",
-      width: 1,
-      height: 1,
-      timbre: "snare",
-      canRotate: true,
-      color: "#ffc857",
-      solutionOrigin: { x: 5, y: 5 },
-      solutionRotation: 0,
-    },
-    {
-      blockId: "hat-bar",
-      name: "Hat Bar",
-      width: 2,
-      height: 1,
-      timbre: "hat",
-      canRotate: true,
-      color: "#5ec2b7",
-      solutionOrigin: { x: 2, y: 0 },
-      solutionRotation: 0,
-    },
-    {
-      blockId: "hat-bar",
-      name: "Hat Bar",
-      width: 2,
-      height: 1,
-      timbre: "hat",
-      canRotate: true,
-      color: "#5ec2b7",
-      solutionOrigin: { x: 4, y: 5 },
-      solutionRotation: 0,
-    },
+  referenceSolution: [
+    { blockId: "sand-single", pieceId: "sand-single-0", origin: { x: 1, y: 1 }, rotation: 0 },
+    { blockId: "sand-single", pieceId: "sand-single-1", origin: { x: 3, y: 3 }, rotation: 0 },
+    { blockId: "hat-domino", pieceId: "hat-domino-0", origin: { x: 4, y: 1 }, rotation: 90 },
   ],
-  {
-    blockedCells: [{ x: 7, y: 5 }],
-  },
-);
+});
 
-export const ensembleLevel = defineLevel({
+const ensembleBaseLevel = defineLevel({
   id: "ensemble",
   name: "Meadow Ensemble",
   description: "Two animals circle overlapping loops. Reshape the terrain so both lines interlock correctly.",
   bpm: 112,
   loopBeats: 8,
-  board: ensembleLayout.board,
-  animals: ensembleLayout.animals,
-  blocks: ensembleLayout.blocks,
-  targetRhythm: ensembleGroove,
+  board: {
+    width: 8,
+    height: 6,
+    blockedCells: [{ x: 7, y: 5 }],
+  },
+  animals: [
+    {
+      id: "panda-1",
+      name: "Panda",
+      animalType: "panda",
+      timbre: "kick",
+      path: {
+        waypoints: [
+          { x: 1, y: 1 },
+          { x: 2, y: 0 },
+          { x: 4, y: 0 },
+          { x: 5, y: 1 },
+          { x: 5, y: 2 },
+          { x: 4, y: 3 },
+          { x: 2, y: 3 },
+          { x: 1, y: 2 },
+        ],
+      },
+    },
+    {
+      id: "cat-1",
+      name: "Cat",
+      animalType: "cat",
+      timbre: "snare",
+      path: {
+        waypoints: [
+          { x: 2, y: 3 },
+          { x: 3, y: 2 },
+          { x: 5, y: 2 },
+          { x: 6, y: 3 },
+          { x: 6, y: 5 },
+          { x: 5, y: 5 },
+          { x: 3, y: 5 },
+          { x: 2, y: 4 },
+        ],
+        startPhaseBeat: 0.5,
+      },
+    },
+  ],
+  blocks: [
+    {
+      blockId: "sand-tile",
+      pieceId: "sand-tile-0",
+      name: "Sand Tile",
+      width: 1,
+      height: 1,
+      timbre: "sand",
+      canRotate: true,
+      color: "#d6bc8f",
+      initialPlacement: { blockId: "sand-tile", pieceId: "sand-tile-0", origin: { x: 0, y: 5 }, rotation: 0 },
+    },
+    {
+      blockId: "sand-tile",
+      pieceId: "sand-tile-1",
+      name: "Sand Tile",
+      width: 1,
+      height: 1,
+      timbre: "sand",
+      canRotate: true,
+      color: "#d6bc8f",
+      initialPlacement: { blockId: "sand-tile", pieceId: "sand-tile-1", origin: { x: 7, y: 0 }, rotation: 0 },
+    },
+    {
+      blockId: "sand-tile",
+      pieceId: "sand-tile-2",
+      name: "Sand Tile",
+      width: 1,
+      height: 1,
+      timbre: "sand",
+      canRotate: true,
+      color: "#d6bc8f",
+      initialPlacement: { blockId: "sand-tile", pieceId: "sand-tile-2", origin: { x: 0, y: 0 }, rotation: 0 },
+    },
+    {
+      blockId: "puddle-tile",
+      pieceId: "puddle-tile-0",
+      name: "Puddle Tile",
+      width: 1,
+      height: 1,
+      timbre: "puddle",
+      canRotate: true,
+      color: "#5f9ed6",
+      initialPlacement: { blockId: "puddle-tile", pieceId: "puddle-tile-0", origin: { x: 7, y: 4 }, rotation: 0 },
+    },
+    {
+      blockId: "puddle-tile",
+      pieceId: "puddle-tile-1",
+      name: "Puddle Tile",
+      width: 1,
+      height: 1,
+      timbre: "puddle",
+      canRotate: true,
+      color: "#5f9ed6",
+      initialPlacement: { blockId: "puddle-tile", pieceId: "puddle-tile-1", origin: { x: 1, y: 5 }, rotation: 0 },
+    },
+    {
+      blockId: "hat-bar",
+      pieceId: "hat-bar-0",
+      name: "Hat Bar",
+      width: 2,
+      height: 1,
+      timbre: "hat",
+      canRotate: true,
+      color: "#5ec2b7",
+      initialPlacement: { blockId: "hat-bar", pieceId: "hat-bar-0", origin: { x: 6, y: 1 }, rotation: 90 },
+    },
+    {
+      blockId: "hat-bar",
+      pieceId: "hat-bar-1",
+      name: "Hat Bar",
+      width: 2,
+      height: 1,
+      timbre: "hat",
+      canRotate: true,
+      color: "#5ec2b7",
+      initialPlacement: { blockId: "hat-bar", pieceId: "hat-bar-1", origin: { x: 0, y: 4 }, rotation: 90 },
+    },
+    {
+      blockId: "kick-pad",
+      pieceId: "kick-pad-0",
+      name: "Kick Pad",
+      width: 1,
+      height: 1,
+      timbre: "kick",
+      canRotate: true,
+      color: "#ffaf45",
+      initialPlacement: { blockId: "kick-pad", pieceId: "kick-pad-0", origin: { x: 7, y: 2 }, rotation: 0 },
+    },
+    {
+      blockId: "snare-pad",
+      pieceId: "snare-pad-0",
+      name: "Snare Pad",
+      width: 1,
+      height: 1,
+      timbre: "snare",
+      canRotate: true,
+      color: "#58c4dd",
+      initialPlacement: { blockId: "snare-pad", pieceId: "snare-pad-0", origin: { x: 0, y: 1 }, rotation: 0 },
+    },
+    {
+      blockId: "snare-pad",
+      pieceId: "snare-pad-1",
+      name: "Snare Pad",
+      width: 1,
+      height: 1,
+      timbre: "snare",
+      canRotate: true,
+      color: "#58c4dd",
+      initialPlacement: { blockId: "snare-pad", pieceId: "snare-pad-1", origin: { x: 6, y: 0 }, rotation: 0 },
+    },
+  ],
+  targetRhythm: [],
   judge: {
     beatTolerance: 0.16,
   },
   models: defaultAnimalModelRegistry,
-  referenceSolution: ensembleLayout.referenceSolution,
+  referenceSolution: [
+    { blockId: "kick-pad", pieceId: "kick-pad-0", origin: { x: 1, y: 1 }, rotation: 0 },
+    { blockId: "snare-pad", pieceId: "snare-pad-0", origin: { x: 3, y: 2 }, rotation: 0 },
+    { blockId: "snare-pad", pieceId: "snare-pad-1", origin: { x: 6, y: 5 }, rotation: 0 },
+    { blockId: "puddle-tile", pieceId: "puddle-tile-0", origin: { x: 1, y: 2 }, rotation: 0 },
+    { blockId: "hat-bar", pieceId: "hat-bar-0", origin: { x: 2, y: 0 }, rotation: 0 },
+    { blockId: "hat-bar", pieceId: "hat-bar-1", origin: { x: 4, y: 5 }, rotation: 0 },
+  ],
+});
+
+const ensembleSolved = evaluatePlacements(
+  ensembleBaseLevel,
+  ensembleBaseLevel.referenceSolution ?? [],
+);
+
+export const ensembleLevel = defineLevel({
+  ...ensembleBaseLevel,
+  targetRhythm: ensembleSolved.producedTriggers
+    .slice()
+    .sort((left, right) => left.beat - right.beat || left.id.localeCompare(right.id))
+    .map((trigger, index) => ({
+      id: `ensemble-note-${index}`,
+      lane:
+        trigger.timbre === "hat"
+          ? "perc"
+          : trigger.timbre === "sand" || trigger.timbre === "puddle"
+            ? "foley"
+            : "drums",
+      beat: Number(trigger.beat.toFixed(3)),
+      timbre: trigger.timbre,
+      velocity: Math.min(1.2, 0.6 + trigger.weight * 0.3),
+    })),
 });

@@ -71,12 +71,12 @@ export function createBlockModelMesh(
   const normalizedTimbre = timbre.toLowerCase();
   const width = rotation === 90 ? block.height : block.width;
   const height = rotation === 90 ? block.width : block.height;
-  const isKick = normalizedTimbre === "kick";
+  const isSandFamily = normalizedTimbre === "sand" || normalizedTimbre === "leaf";
   const family = {
-    end: isKick ? templates.pathEnd : templates.riverEnd,
-    straight: isKick ? templates.pathStraight : templates.riverStraight,
-    corner: isKick ? templates.pathCorner : templates.riverCorner,
-    tile: isKick ? templates.pathTile : templates.riverTile,
+    end: isSandFamily ? templates.pathEnd : templates.riverEnd,
+    straight: isSandFamily ? templates.pathStraight : templates.riverStraight,
+    corner: isSandFamily ? templates.pathCorner : templates.riverCorner,
+    tile: isSandFamily ? templates.pathTile : templates.riverTile,
   };
 
   const group = new THREE.Group();
