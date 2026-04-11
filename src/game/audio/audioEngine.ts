@@ -40,7 +40,6 @@ export class AudioEngine {
     }
 
     Tone.getContext().lookAhead = 0.01;
-    Tone.getContext().updateInterval = 0.01;
     await Tone.start();
     await Tone.loaded();
     this.started = true;
@@ -103,12 +102,8 @@ export class AudioEngine {
       if (!player || !player.loaded) {
         return;
       }
-      player.start(
-        time,
-        0,
-        undefined,
-        Math.min(1.8, Math.max(0.05, velocity)) * foleyGainFactor,
-      );
+      player.volume.value = Tone.gainToDb(Math.min(1.8, Math.max(0.05, velocity)) * foleyGainFactor);
+      player.start(time, 0);
       return;
     }
 
@@ -116,7 +111,6 @@ export class AudioEngine {
       mapTimbreToPitch(normalizedTimbre),
       getDuration(style),
       time,
-      Math.min(1.8, Math.max(0.05, velocity)),
     );
   }
 
@@ -137,12 +131,9 @@ export class AudioEngine {
       synth.connect(input);
       const foleyPlayers = new Map<string, Tone.Player>();
       for (const [timbre, source] of Object.entries(foleySourceMap)) {
-        const player = new Tone.Player({
-          url: source,
-          autostart: false,
-          retrigger: true,
-          fadeOut: 0.03,
-        });
+        const player = new Tone.Player(source);
+        player.autostart = false;
+        player.fadeOut = 0.03;
         player.connect(input);
         foleyPlayers.set(timbre, player);
       }

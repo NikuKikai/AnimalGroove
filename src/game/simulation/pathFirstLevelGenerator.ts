@@ -684,13 +684,13 @@ function chooseRectangleTimbre(
   sandScore *= 0.62;
   puddleScore *= 0.58;
 
-  const ordered = [
+  const ordered: Array<["kick" | "snare" | "hat" | "sand" | "puddle", number]> = [
     ["kick", kickScore],
     ["snare", snareScore],
     ["hat", hatScore],
     ["sand", sandScore],
     ["puddle", puddleScore],
-  ] as const;
+  ];
   ordered.sort((left, right) => right[1] - left[1]);
   return ordered[0][0];
 }
