@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { ensembleLevel, tutorialLevel } from "../../data/levels";
+import { levels } from "../../data/levels";
 import { evaluatePlacements, generateLevelFromPaths, getInitialPlacements, solveLevel, validatePlacements } from "../simulation";
 import type { LevelDefinition, Placement, SimulationResult } from "../types";
 
@@ -92,7 +92,6 @@ type GameState = {
   moveBlock: (placement: Placement) => void;
 };
 
-const baseLevels = [tutorialLevel, ensembleLevel];
 
 /** Resolves a level id to a concrete level definition. */
 function getLevelById(levels: LevelDefinition[], levelId: string) {
@@ -127,11 +126,11 @@ function buildRandomLevel(serial: number) {
 
 /** Central Zustand store for game state, placement state, and audio mix controls. */
 export const useGameStore = create<GameState>((set, get) => {
-  const initialLevel = baseLevels[0];
+  const initialLevel = levels[0];
   const initialPlacements = getInitialPlacements(initialLevel);
 
   return {
-    levels: baseLevels,
+    levels: levels,
     activeLevelId: initialLevel.id,
     placements: initialPlacements,
     draggingRotation: 0,

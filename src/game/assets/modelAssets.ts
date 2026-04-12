@@ -22,6 +22,14 @@ export type BlockTileModelPaths = {
   riverTile: ModelAssetEntry;
 };
 
+export type StaticObstacleDefinition = {
+  obstacleId: string;
+  width: number;
+  height: number;
+  model?: string | ModelAssetEntry;
+  color?: string;
+};
+
 const modelTemplateCache = new Map<string, Promise<THREE.Object3D>>();
 
 /** Builds a relative URL to a model asset under public/3Dmodels. */
@@ -73,6 +81,21 @@ export const blockTileModelPaths: BlockTileModelPaths = {
   riverCorner: defineModelAsset("Blocks", "ground_riverCorner.glb"),
   riverTile: defineModelAsset("Blocks", "ground_riverTile.glb"),
 };
+
+/** Central registry for static obstacle definitions used by authored levels. */
+export const staticObstacleRegistry: Record<string, StaticObstacleDefinition> = {
+  'rock_tallA': {
+    obstacleId: 'rock_tallA',
+    width: 1,
+    height: 1,
+    model: './3Dmodels/Objects/rock_tallA.glb'
+  }
+};
+
+/** Resolves one static obstacle definition by id. */
+export function getStaticObstacleDefinition(obstacleId: string) {
+  return staticObstacleRegistry[obstacleId];
+}
 
 /** Loads and caches one model template by path for later cloning. */
 export function loadModelTemplate(asset: string | ModelAssetEntry) {

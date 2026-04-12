@@ -63,6 +63,12 @@ export type BoardDefinition = {
   blockedCells?: Vec2[];
 };
 
+export type StaticObstaclePlacement = {
+  obstacleId: string;
+  origin: Vec2;
+  rotation: 0 | 90;
+};
+
 export type JudgeConfig = {
   beatTolerance: number;
 };
@@ -81,6 +87,7 @@ export type LevelDefinition = {
   targetRhythm: RhythmEvent[];
   judge: JudgeConfig;
   models: ModelRegistry;
+  staticObstacles?: StaticObstaclePlacement[];
   referenceSolution?: Placement[];
 };
 

@@ -3,11 +3,13 @@ import type {
   LevelBlock,
   LevelDefinition,
   Placement,
+  StaticObstaclePlacement,
   TriggerEvent,
   Vec2,
 } from "../types";
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { resolveBlockTimbre } from "../engine/blockTimbre";
+import { getStaticObstacleDefinition } from "../assets/modelAssets";
 
 export type OccupiedCell = {
   placement: Placement;
@@ -26,7 +28,13 @@ export function rotateDimensions(block: LevelBlock, rotation: Placement["rotatio
 
 /** Returns blocked cells as a string-keyed set for quick lookup. */
 export function getBlockedCellSet(level: LevelDefinition) {
-  return new Set((level.board.blockedCells ?? []).map((cell) => `${cell.x},${cell.y}`));
+  const blocked = new Set((level.board.blockedCells ?? []).map((cell) => `${cell.x},${cell.y}`));
+  for (const obstacle of level.staticObstacles ?? []) {
+    for (const cell of staticObstacleFootprint(obstacle)) {
+      blocked.add(`${cell.x},${cell.y}`);
+    }
+  }
+  return blocked;
 }
 
 /** Builds a map from piece id to block definition. */
@@ -239,4 +247,23 @@ export function computePathMetrics(waypoints: Vec2[]): PathMetrics {
 /** Produces a stable identifier for a concrete placed block instance. */
 export function placementInstanceKey(placement: Placement) {
   return `${placement.pieceId}:${placement.origin.x}:${placement.origin.y}:${placement.rotation}`;
+}
+
+/** Expands one static obstacle placement into occupied cells using registry dimensions. */
+function staticObstacleFootprint(obstaclePlacement: StaticObstaclePlacement): Vec2[] {
+  const definition = getStaticObstacleDefinition(obstaclePlacement.obstacleId);
+  const width = definition ? (obstaclePlacement.rotation === 90 ? definition.height : definition.width) : 1;
+  const height = definition ? (obstaclePlacement.rotation === 90 ? definition.width : definition.height) : 1;
+  const cells: Vec2[] = [];
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      cells.push({
+        x: obstaclePlacement.origin.x + x,
+        y: obstaclePlacement.origin.y + y,
+      });
+    }
+  }
+
+  return cells;
 }

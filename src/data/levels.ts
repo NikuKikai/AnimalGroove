@@ -2,7 +2,7 @@ import { defaultAnimalModelRegistry } from "../game/assets/modelAssets";
 import { defineLevel } from "../game/engine/levelDsl";
 import { evaluatePlacements } from "../game/simulation";
 
-export const tutorialLevel = defineLevel({
+const tutorialLevel = defineLevel({
     id: "tutorial",
     name: "Forest Warmup",
     description: "One fox circles the clearing. Rebuild the terrain so the loop lands on the sand pattern.",
@@ -12,6 +12,13 @@ export const tutorialLevel = defineLevel({
         width: 6,
         height: 5,
     },
+    staticObstacles: [
+        {
+            obstacleId: "rock_tallA",
+            origin: { x: 2, y: 2 },
+            rotation: 0,
+        },
+    ],
     animals: [
         {
             id: "fox-1",
@@ -252,7 +259,7 @@ const ensembleSolved = evaluatePlacements(
     ensembleBaseLevel.referenceSolution ?? [],
 );
 
-export const ensembleLevel = defineLevel({
+const ensembleLevel = defineLevel({
     ...ensembleBaseLevel,
     targetRhythm: ensembleSolved.producedTriggers
         .slice()
@@ -270,3 +277,5 @@ export const ensembleLevel = defineLevel({
             velocity: Math.min(1.2, 0.6 + trigger.weight * 0.3),
         })),
 });
+
+export const levels = [tutorialLevel, ensembleLevel];

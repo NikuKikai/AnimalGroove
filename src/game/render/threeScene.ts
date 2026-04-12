@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
-import { blockTileModelPaths, loadModelTemplate, preloadModelTemplates } from "../assets/modelAssets";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { blockTileModelPaths, getStaticObstacleDefinition, loadModelTemplate, preloadModelTemplates } from "../assets/modelAssets";
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { resolveBlockTimbre } from "../engine/blockTimbre";
 import type { LevelDefinition, Placement } from "../types";
@@ -29,11 +31,14 @@ type SceneState = {
   terrainCells: Map<string, THREE.Object3D>;
   terrainHiddenSignature?: string;
   iconTextureCache: Map<string, THREE.Texture>;
+  staticObstacleMeshes: Map<string, THREE.Object3D>;
 };
 
 type CameraDragMode = "pan" | "rotate";
 
 const pathPalette = ["#ffaf45", "#58c4dd", "#ffc857", "#ff7f7f", "#b291ff", "#7bd389"];
+const SCENE_BACKGROUND_COLOR = "#0f1718";
+const ATMOSPHERIC_FOG_DENSITY = 0.02;
 
 /** Hosts the Three.js scene, persistent block meshes, and camera controls for one board view. */
 export class ThreeScene {
@@ -44,6 +49,11 @@ export class ThreeScene {
   private camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
 
   private renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  private composer: EffectComposer;
+  private renderPass: RenderPass;
+  private topPointLight = new THREE.PointLight("#fff4d6", 10.5, 12, 1.0);
+  private keyDirectionalLight = new THREE.DirectionalLight("#ffffff", 1.9);
+  private topDirectionalLight = new THREE.DirectionalLight("#ffffff", 1.15);
 
   private raycaster = new THREE.Raycaster();
 
@@ -79,18 +89,46 @@ export class ThreeScene {
     hitPulseMeshes: new Map(),
     terrainCells: new Map(),
     iconTextureCache: new Map(),
+    staticObstacleMeshes: new Map(),
   };
+
+  private staticObstacleTemplates = new Map<string, THREE.Object3D>();
 
   /** Creates the renderer, camera, and shared lighting rig. */
   constructor() {
     this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.scene.background = new THREE.Color("#0f1718");
+    this.scene.background = new THREE.Color(SCENE_BACKGROUND_COLOR);
+    this.scene.fog = new THREE.FogExp2(SCENE_BACKGROUND_COLOR, ATMOSPHERIC_FOG_DENSITY);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.composer = new EffectComposer(this.renderer);
+    this.renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(this.renderPass);
     this.updateCamera();
 
-    const ambientLight = new THREE.AmbientLight("#ffffff", 1);
-    const directionalLight = new THREE.DirectionalLight("#ffffff", 3);
-    directionalLight.position.set(6, 12, 4);
-    this.scene.add(ambientLight, directionalLight);
+    const ambientLight = new THREE.AmbientLight("#ffffff", 0.32);
+    this.keyDirectionalLight.position.set(6, 12, 4);
+    this.keyDirectionalLight.castShadow = true;
+    this.keyDirectionalLight.shadow.mapSize.set(2048, 2048);
+    this.keyDirectionalLight.shadow.radius = 3;
+    this.keyDirectionalLight.shadow.bias = -0.00012;
+    this.keyDirectionalLight.shadow.normalBias = 0.02;
+    this.topDirectionalLight.position.set(0, 20, 0);
+    this.topDirectionalLight.target.position.set(0, 0, 0);
+    this.topDirectionalLight.castShadow = true;
+    this.topDirectionalLight.shadow.mapSize.set(1024, 1024);
+    this.topDirectionalLight.shadow.radius = 2;
+    this.topDirectionalLight.shadow.bias = -0.0001;
+    this.topDirectionalLight.shadow.normalBias = 0.02;
+    this.topPointLight.position.set(0, 3.8, 0);
+    this.scene.add(
+      ambientLight,
+      this.keyDirectionalLight,
+      this.topDirectionalLight,
+      this.keyDirectionalLight.target,
+      this.topDirectionalLight.target,
+      this.topPointLight,
+    );
   }
 
   /** Preloads unique model assets so later level switches can reuse them. */
@@ -173,6 +211,7 @@ export class ThreeScene {
     this.camera.aspect = clientWidth / Math.max(clientHeight, 1);
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(clientWidth, clientHeight);
+    this.composer.setSize(clientWidth, clientHeight);
   }
 
   /** Reconfigures terrain, paths, and animals for a newly loaded level. */
@@ -180,6 +219,7 @@ export class ThreeScene {
     const version = ++this.loadVersion;
     this.clearDynamicLevel();
     await this.ensureBlockTileTemplates((progress) => onProgress?.(progress * 0.18));
+    await this.ensureStaticObstacleTemplates(level, (progress) => onProgress?.(0.18 + progress * 0.1));
     this.configureBoard(level);
     this.fitCameraToBoard(level);
     onProgress?.(0.22);
@@ -206,7 +246,7 @@ export class ThreeScene {
     for (const pathLine of this.state.pathLines) {
       pathLine.visible = showPaths;
     }
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 
   /** Converts a pointer position into a board cell in integer grid coordinates. */
@@ -293,6 +333,7 @@ export class ThreeScene {
       terrainCells: new Map(),
       terrainHiddenSignature: undefined,
       iconTextureCache: new Map(),
+      staticObstacleMeshes: new Map(),
     };
   }
 
@@ -303,6 +344,7 @@ export class ThreeScene {
       ...this.state.animalFallbacks.values(),
       ...this.state.pathLines,
       ...this.state.blockMeshes.values(),
+      ...this.state.staticObstacleMeshes.values(),
       ...this.state.hitPulseMeshes.values(),
     ]) {
       this.disposeSceneObject(object);
@@ -311,6 +353,7 @@ export class ThreeScene {
     this.state.animalFallbacks.clear();
     this.state.pathLines = [];
     this.state.blockMeshes.clear();
+    this.state.staticObstacleMeshes.clear();
     this.state.hitPulseMeshes.clear();
   }
 
@@ -330,6 +373,7 @@ export class ThreeScene {
       for (let x = 0; x < level.board.width; x += 1) {
         const cellMesh = this.blockTiles.grass.clone(true);
         cellMesh.position.set(x, 0, y);
+        applyShadowFlags(cellMesh, { cast: false, receive: true });
         terrainRoot.add(cellMesh);
         this.state.terrainCells.set(`${x},${y}`, cellMesh);
       }
@@ -337,11 +381,30 @@ export class ThreeScene {
 
     this.state.terrainRoot = terrainRoot;
     this.scene.add(terrainRoot);
+    this.addStaticObstacles(level);
   }
 
   /** Fits the orbit camera target and distance to the active board bounds. */
   private fitCameraToBoard(level: LevelDefinition) {
     this.orbitTarget.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
+    this.topPointLight.position.set((level.board.width - 1) / 2, 3.8, (level.board.height - 1) / 2);
+    this.keyDirectionalLight.target.position.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
+    this.topDirectionalLight.target.position.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
+    const shadowSpan = Math.max(level.board.width, level.board.height) * 0.9 + 3;
+    this.keyDirectionalLight.shadow.camera.left = -shadowSpan;
+    this.keyDirectionalLight.shadow.camera.right = shadowSpan;
+    this.keyDirectionalLight.shadow.camera.top = shadowSpan;
+    this.keyDirectionalLight.shadow.camera.bottom = -shadowSpan;
+    this.keyDirectionalLight.shadow.camera.near = 0.5;
+    this.keyDirectionalLight.shadow.camera.far = 80;
+    this.keyDirectionalLight.shadow.camera.updateProjectionMatrix();
+    this.topDirectionalLight.shadow.camera.left = -shadowSpan;
+    this.topDirectionalLight.shadow.camera.right = shadowSpan;
+    this.topDirectionalLight.shadow.camera.top = shadowSpan;
+    this.topDirectionalLight.shadow.camera.bottom = -shadowSpan;
+    this.topDirectionalLight.shadow.camera.near = 0.5;
+    this.topDirectionalLight.shadow.camera.far = 80;
+    this.topDirectionalLight.shadow.camera.updateProjectionMatrix();
     this.orbitDistance = THREE.MathUtils.clamp(Math.max(level.board.width, level.board.height) * 1.7, 8, 26);
     this.clampCameraTarget(level);
     this.updateCamera();
@@ -410,6 +473,8 @@ export class ThreeScene {
         new THREE.SphereGeometry(0.25, 16, 16),
         new THREE.MeshStandardMaterial({ color: fallbackColor }),
       );
+      fallback.castShadow = true;
+      fallback.receiveShadow = true;
       fallback.position.set(0, 0.3, 0);
       this.state.animalFallbacks.set(animal.id, fallback);
       this.scene.add(fallback);
@@ -428,6 +493,7 @@ export class ThreeScene {
 
         const root = cloneSkinned(template);
         normalizeImportedModelMaterials(root);
+        applyShadowFlags(root, { cast: true, receive: true });
         root.scale.setScalar(0.35);
         root.position.set(0, 0.18, 0);
         this.state.animalRoots.set(animal.id, root);
@@ -513,6 +579,7 @@ export class ThreeScene {
               placement.rotation,
               previewState === "none" ? 1 : 0.78,
             );
+        applyShadowFlags(mesh, { cast: visualKind === "button", receive: true });
         mesh.userData.renderSignature = renderSignature;
         this.state.blockMeshes.set(meshKey, mesh);
         this.scene.add(mesh);
@@ -607,6 +674,46 @@ export class ThreeScene {
     this.state.terrainHiddenSignature = hiddenSignature;
   }
 
+  /** Adds static obstacle meshes for the active level and keeps one mesh per obstacle instance. */
+  private addStaticObstacles(level: LevelDefinition) {
+    for (const mesh of this.state.staticObstacleMeshes.values()) {
+      this.disposeSceneObject(mesh);
+    }
+    this.state.staticObstacleMeshes.clear();
+
+    for (const obstaclePlacement of level.staticObstacles ?? []) {
+      const definition = getStaticObstacleDefinition(obstaclePlacement.obstacleId);
+      if (!definition) {
+        continue;
+      }
+
+      const template = this.staticObstacleTemplates.get(obstaclePlacement.obstacleId);
+      const obstacleMesh = template
+        ? template.clone(true)
+        : new THREE.Mesh(
+          new THREE.BoxGeometry(definition.width, 0.55, definition.height),
+          new THREE.MeshStandardMaterial({
+            color: definition.color ?? "#5d7a63",
+            roughness: 0.88,
+            metalness: 0.04,
+          }),
+        );
+      normalizeImportedModelMaterials(obstacleMesh);
+      applyShadowFlags(obstacleMesh, { cast: true, receive: true });
+
+      const width = obstaclePlacement.rotation === 90 ? definition.height : definition.width;
+      const height = obstaclePlacement.rotation === 90 ? definition.width : definition.height;
+      obstacleMesh.position.set(
+        obstaclePlacement.origin.x + (width - 1) * 0.5,
+        0,
+        obstaclePlacement.origin.y + (height - 1) * 0.5,
+      );
+      obstacleMesh.rotation.y = obstaclePlacement.rotation === 90 ? Math.PI / 2 : 0;
+      this.scene.add(obstacleMesh);
+      this.state.staticObstacleMeshes.set(obstaclePlacementKey(obstaclePlacement), obstacleMesh);
+    }
+  }
+
   /** Removes one optional scene object. */
   private removeObject(object?: THREE.Object3D) {
     if (!object) {
@@ -650,6 +757,31 @@ export class ThreeScene {
       }),
     );
     this.blockTiles = Object.fromEntries(loaded) as BlockTileTemplates;
+  }
+
+  /** Preloads and normalizes static obstacle templates for the current level. */
+  private async ensureStaticObstacleTemplates(level: LevelDefinition, onProgress?: (progress: number) => void) {
+    const obstacleIds = [...new Set((level.staticObstacles ?? []).map((obstacle) => obstacle.obstacleId))];
+    if (obstacleIds.length === 0) {
+      onProgress?.(1);
+      return;
+    }
+
+    let completed = 0;
+    for (const obstacleId of obstacleIds) {
+      const definition = getStaticObstacleDefinition(obstacleId);
+      if (!definition?.model) {
+        completed += 1;
+        onProgress?.(completed / obstacleIds.length);
+        continue;
+      }
+
+      const template = await loadModelTemplate(definition.model);
+      const yOffset = typeof definition.model === "string" ? 0 : (definition.model.yOffset ?? 0);
+      this.staticObstacleTemplates.set(obstacleId, this.normalizeBlockTileTemplate(template, yOffset));
+      completed += 1;
+      onProgress?.(completed / obstacleIds.length);
+    }
   }
 
   /** Normalizes one imported tile so it fills one grid cell and rests on y=0. */
@@ -704,6 +836,25 @@ function getFootprintCells(
   return cells;
 }
 
+/** Enumerates occupied board cells for one static obstacle placement. */
+function getObstacleFootprint(obstaclePlacement: NonNullable<LevelDefinition["staticObstacles"]>[number]) {
+  const definition = getStaticObstacleDefinition(obstaclePlacement.obstacleId);
+  const width = definition ? (obstaclePlacement.rotation === 90 ? definition.height : definition.width) : 1;
+  const height = definition ? (obstaclePlacement.rotation === 90 ? definition.width : definition.height) : 1;
+  const cells: Array<{ x: number; y: number }> = [];
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      cells.push({ x: obstaclePlacement.origin.x + x, y: obstaclePlacement.origin.y + y });
+    }
+  }
+  return cells;
+}
+
+/** Returns a stable key for one static obstacle placement instance. */
+function obstaclePlacementKey(obstaclePlacement: NonNullable<LevelDefinition["staticObstacles"]>[number]) {
+  return `${obstaclePlacement.obstacleId}:${obstaclePlacement.origin.x}:${obstaclePlacement.origin.y}:${obstaclePlacement.rotation}`;
+}
+
 /** Returns the stable key used to identify one placed block event instance. */
 export function placementKey(placement: Placement) {
   return placementInstanceKey(placement);
@@ -719,21 +870,51 @@ function normalizeImportedModelMaterials(root: THREE.Object3D) {
     }
 
     if (Array.isArray(material)) {
-      for (const item of material) {
-        normalizeImportedMaterial(item);
-      }
+      mesh.material = material.map((item) => normalizeImportedMaterial(item));
       return;
     }
 
-    normalizeImportedMaterial(material);
+    mesh.material = normalizeImportedMaterial(material);
   });
 }
 
-/** Removes baked emissive bias from imported materials while keeping their base textures intact. */
+/** Converts unlit materials to lit PBR materials, then removes emissive bias. */
 function normalizeImportedMaterial(material: THREE.Material) {
-  const litMaterial = material as THREE.MeshStandardMaterial;
+  let nextMaterial: THREE.Material = material;
+
+  if (material instanceof THREE.MeshBasicMaterial) {
+    nextMaterial = new THREE.MeshStandardMaterial({
+      color: material.color.clone(),
+      map: material.map ?? null,
+      transparent: material.transparent,
+      opacity: material.opacity,
+      alphaTest: material.alphaTest,
+      side: material.side,
+      roughness: 0.86,
+      metalness: 0.04,
+      depthWrite: material.depthWrite,
+      depthTest: material.depthTest,
+      name: material.name,
+    });
+    material.dispose();
+  }
+
+  const litMaterial = nextMaterial as THREE.MeshStandardMaterial;
   if ("emissive" in litMaterial && litMaterial.emissive) {
     litMaterial.emissive.set("#000000");
     litMaterial.emissiveIntensity = 0;
   }
+  return nextMaterial;
+}
+
+/** Applies cast/receive shadow flags to every mesh within an object hierarchy. */
+function applyShadowFlags(root: THREE.Object3D, options: { cast: boolean; receive: boolean }) {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) {
+      return;
+    }
+    mesh.castShadow = options.cast;
+    mesh.receiveShadow = options.receive;
+  });
 }
