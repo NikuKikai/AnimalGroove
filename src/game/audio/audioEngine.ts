@@ -166,17 +166,17 @@ function getSynthConfig(style: VoiceStyle) {
   switch (style) {
     case "hit":
       return {
-        oscillator: { type: gameConfig.audio.synth.hit.oscillator },
+        oscillator: { type: "triangle" as const },
         envelope: { ...gameConfig.audio.synth.hit.envelope },
       };
     case "wrong":
       return {
-        oscillator: { type: gameConfig.audio.synth.wrong.oscillator },
+        oscillator: { type: "square" as const },
         envelope: { ...gameConfig.audio.synth.wrong.envelope },
       };
     case "reference":
       return {
-        oscillator: { type: gameConfig.audio.synth.reference.oscillator },
+        oscillator: { type: "sine" as const },
         envelope: { ...gameConfig.audio.synth.reference.envelope },
       };
   }
