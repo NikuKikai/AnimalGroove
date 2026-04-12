@@ -109,17 +109,13 @@ export class ThreeScene {
     const ambientLight = new THREE.AmbientLight("#ffffff", 0.32);
     this.keyDirectionalLight.position.set(6, 12, 4);
     this.keyDirectionalLight.castShadow = true;
-    this.keyDirectionalLight.shadow.mapSize.set(2048, 2048);
-    this.keyDirectionalLight.shadow.radius = 3;
+    this.keyDirectionalLight.shadow.mapSize.set(1024, 1024);
+    this.keyDirectionalLight.shadow.radius = 2;
     this.keyDirectionalLight.shadow.bias = -0.00012;
     this.keyDirectionalLight.shadow.normalBias = 0.02;
     this.topDirectionalLight.position.set(0, 20, 0);
     this.topDirectionalLight.target.position.set(0, 0, 0);
-    this.topDirectionalLight.castShadow = true;
-    this.topDirectionalLight.shadow.mapSize.set(1024, 1024);
-    this.topDirectionalLight.shadow.radius = 2;
-    this.topDirectionalLight.shadow.bias = -0.0001;
-    this.topDirectionalLight.shadow.normalBias = 0.02;
+    this.topDirectionalLight.castShadow = false;
     this.topPointLight.position.set(0, 3.8, 0);
     this.scene.add(
       ambientLight,
@@ -398,13 +394,6 @@ export class ThreeScene {
     this.keyDirectionalLight.shadow.camera.near = 0.5;
     this.keyDirectionalLight.shadow.camera.far = 80;
     this.keyDirectionalLight.shadow.camera.updateProjectionMatrix();
-    this.topDirectionalLight.shadow.camera.left = -shadowSpan;
-    this.topDirectionalLight.shadow.camera.right = shadowSpan;
-    this.topDirectionalLight.shadow.camera.top = shadowSpan;
-    this.topDirectionalLight.shadow.camera.bottom = -shadowSpan;
-    this.topDirectionalLight.shadow.camera.near = 0.5;
-    this.topDirectionalLight.shadow.camera.far = 80;
-    this.topDirectionalLight.shadow.camera.updateProjectionMatrix();
     this.orbitDistance = THREE.MathUtils.clamp(Math.max(level.board.width, level.board.height) * 1.7, 8, 26);
     this.clampCameraTarget(level);
     this.updateCamera();
@@ -568,35 +557,67 @@ export class ThreeScene {
 
       if (!mesh) {
         const timbre = resolveBlockTimbre(block.blockId);
+        const previewColor =
+          previewState === "invalid"
+            ? "#ff5f57"
+            : previewState === "valid"
+              ? lightenHexColor(block.color, 0.3)
+              : block.color;
         mesh =
           visualKind === "terrain"
             ? createBlockModelMesh(this.blockTiles, timbre, block, placement.rotation, 1, previewState)
             : createBlockMesh(
               this.state.iconTextureCache,
               timbre,
-              previewState === "invalid" ? "#ff5f57" : block.color,
+              previewColor,
               block,
               placement.rotation,
-              previewState === "none" ? 1 : 0.78,
+              1,
             );
         applyShadowFlags(mesh, { cast: visualKind === "button", receive: true });
         mesh.userData.renderSignature = renderSignature;
+        mesh.userData.pickPlacementKey = "";
+        mesh.userData.lastPressed = false;
+        mesh.userData.lastScaleY = 1;
+        mesh.userData.lastPosX = Number.NaN;
+        mesh.userData.lastPosY = Number.NaN;
+        mesh.userData.lastPosZ = Number.NaN;
         this.state.blockMeshes.set(meshKey, mesh);
         this.scene.add(mesh);
       }
 
       const isPressed = previewState === "none" && pressedPlacementIds.has(placementKey(placement));
       const pressDepth = visualKind === "button" && isPressed ? 0.1 : 0;
-      mesh.scale.y = visualKind === "button" && isPressed ? 0.52 : 1;
-      mesh.position.set(
-        placement.origin.x + getDisplayOffset(block, placement.rotation).x,
-        -pressDepth,
-        placement.origin.y + getDisplayOffset(block, placement.rotation).y,
-      );
-      applyPickData(mesh, {
-        kind: "placement",
-        placement,
-      });
+      const nextScaleY = visualKind === "button" && isPressed ? 0.52 : 1;
+      if (mesh.userData.lastScaleY !== nextScaleY) {
+        mesh.scale.y = nextScaleY;
+        mesh.userData.lastScaleY = nextScaleY;
+      }
+
+      const offset = getDisplayOffset(block, placement.rotation);
+      const nextPosX = placement.origin.x + offset.x;
+      const nextPosY = -pressDepth;
+      const nextPosZ = placement.origin.y + offset.y;
+      if (
+        mesh.userData.lastPosX !== nextPosX ||
+        mesh.userData.lastPosY !== nextPosY ||
+        mesh.userData.lastPosZ !== nextPosZ
+      ) {
+        mesh.position.set(nextPosX, nextPosY, nextPosZ);
+        mesh.userData.lastPosX = nextPosX;
+        mesh.userData.lastPosY = nextPosY;
+        mesh.userData.lastPosZ = nextPosZ;
+      }
+
+      const nextPickKey = placementKey(placement);
+      if (mesh.userData.pickPlacementKey !== nextPickKey || mesh.userData.lastPressed !== isPressed) {
+        applyPickData(mesh, {
+          kind: "placement",
+          placement,
+        });
+        mesh.userData.pickPlacementKey = nextPickKey;
+        mesh.userData.lastPressed = isPressed;
+      }
     }
 
     for (const [meshKey, mesh] of this.state.blockMeshes) {
@@ -853,6 +874,13 @@ function getObstacleFootprint(obstaclePlacement: NonNullable<LevelDefinition["st
 /** Returns a stable key for one static obstacle placement instance. */
 function obstaclePlacementKey(obstaclePlacement: NonNullable<LevelDefinition["staticObstacles"]>[number]) {
   return `${obstaclePlacement.obstacleId}:${obstaclePlacement.origin.x}:${obstaclePlacement.origin.y}:${obstaclePlacement.rotation}`;
+}
+
+/** Lightens a hex color toward white while preserving some of the original hue. */
+function lightenHexColor(hex: string, amount: number) {
+  const color = new THREE.Color(hex);
+  color.lerp(new THREE.Color("#ffffff"), amount);
+  return `#${color.getHexString()}`;
 }
 
 /** Returns the stable key used to identify one placed block event instance. */

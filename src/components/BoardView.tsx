@@ -36,6 +36,7 @@ export function BoardView() {
   );
   const dragSessionRef = useRef<DragSession | null>(null);
   const cameraSessionRef = useRef<CameraSession | null>(null);
+  const dragPointerRef = useRef<{ x: number; y: number } | undefined>(undefined);
   const previewRef = useRef<PreviewPlacement | undefined>(undefined);
   const lastBeatRef = useRef(0);
   const audioReadyRef = useRef(false);
@@ -62,7 +63,6 @@ export function BoardView() {
   const setCurrentBeat = useGameStore((state) => state.setCurrentBeat);
   const moveBlock = useGameStore((state) => state.moveBlock);
   const startDrag = useGameStore((state) => state.startDrag);
-  const updateDragPointer = useGameStore((state) => state.updateDragPointer);
   const rotateDrag = useGameStore((state) => state.rotateDrag);
   const endDrag = useGameStore((state) => state.endDrag);
   const level = getActiveLevel({ activeLevelId, levels });
@@ -167,6 +167,7 @@ export function BoardView() {
       dragSessionRef.current = {
         originalPlacement: hit.placement,
       };
+      dragPointerRef.current = { x: event.clientX, y: event.clientY };
       clearPreview();
       startDrag(hit.placement.pieceId, hit.placement.blockId, { x: event.clientX, y: event.clientY }, hit.placement.rotation);
     };
@@ -181,7 +182,7 @@ export function BoardView() {
         return;
       }
 
-      updateDragPointer({ x: event.clientX, y: event.clientY });
+      dragPointerRef.current = { x: event.clientX, y: event.clientY };
       const activeLevel = levelRef.current;
       const cell = scene.getCellFromPointer(event.clientX, event.clientY, activeLevel);
       if (!cell) {
@@ -205,6 +206,17 @@ export function BoardView() {
         origin: cell,
         rotation: state.draggingRotation,
       };
+      const currentPreview = previewRef.current;
+      if (
+        currentPreview &&
+        currentPreview.placement.blockId === nextPlacement.blockId &&
+        currentPreview.placement.pieceId === nextPlacement.pieceId &&
+        currentPreview.placement.rotation === nextPlacement.rotation &&
+        currentPreview.placement.origin.x === nextPlacement.origin.x &&
+        currentPreview.placement.origin.y === nextPlacement.origin.y
+      ) {
+        return;
+      }
       const nextPreview: PreviewPlacement = {
         placement: nextPlacement,
         valid: validatePlacements(activeLevel, replacePlacement(useGameStore.getState().placements, nextPlacement)).valid,
@@ -261,7 +273,7 @@ export function BoardView() {
       const rotation = state.draggingRotation === 0 ? 90 : 0;
       rotateDrag();
 
-      const pointer = state.dragPointer;
+      const pointer = dragPointerRef.current;
       if (!pointer) {
         return;
       }
@@ -325,7 +337,7 @@ export function BoardView() {
       transport.dispose();
       scene.dispose();
     };
-  }, [endDrag, moveBlock, rotateDrag, setCurrentBeat, startDrag, updateDragPointer]);
+  }, [endDrag, moveBlock, rotateDrag, setCurrentBeat, startDrag]);
 
   // Trigger: whenever the active level changes. Purpose: async-load scene assets, reset transport, and clear transient caches.
   useEffect(() => {
