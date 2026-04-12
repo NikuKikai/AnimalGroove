@@ -1,19 +1,14 @@
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { defineLevel } from "../engine/levelDsl";
 import { defaultAnimalModelRegistry } from "../assets/modelAssets";
+import { gameConfig } from "../config/gameConfig";
 import type { AnimalDefinition, LevelDefinition, Vec2 } from "../types";
 import { evaluatePlacements } from "./judge";
 import { materializeLevelLayout } from "./levelBlockLayout";
 import { sampleAnimalPathVisits } from "./utils";
 
-const generatedAnimalTypes = ["fox", "dog", "bee", "tiger", "parrot", "bunny"];
-const timbrePalette = {
-  kick: "#ffaf45",
-  snare: "#58c4dd",
-  hat: "#ffc857",
-  sand: "#d4b483",
-  puddle: "#5f9ed6",
-};
+const generatedAnimalTypes = gameConfig.generation.generatedAnimalTypes;
+const timbrePalette = gameConfig.generation.timbrePalette;
 
 type PathFirstGenerationOptions = {
   loopBeats?: number;
@@ -48,7 +43,8 @@ type CandidateRectangle = RectanglePlacementDraft & {
 
 /** Builds a level by generating animal paths first, then deriving blocks and groove from the resulting traffic. */
 export function generateLevelFromPaths(id: string, options: PathFirstGenerationOptions = {}): LevelDefinition {
-  const loopBeats = options.loopBeats ?? [6, 8][(options.seed ?? Date.now()) % 2];
+  const loopBeatOptions = gameConfig.generation.defaultLoopBeatOptions;
+  const loopBeats = options.loopBeats ?? loopBeatOptions[(options.seed ?? Date.now()) % loopBeatOptions.length];
   const animalCount = options.animalCount ?? 3;
   const rng = createRng(options.seed ?? hashSeed(id));
   const animals = buildAnimals(loopBeats, animalCount, rng);
@@ -61,13 +57,13 @@ export function generateLevelFromPaths(id: string, options: PathFirstGenerationO
     id,
     name: `Generated ${id}`,
     description: "Auto-generated path-first puzzle",
-    bpm: 112,
+    bpm: gameConfig.generation.defaultGeneratedBpm,
     loopBeats,
     board: layout.board,
     animals: layout.animals,
     blocks: layout.blocks,
     targetRhythm: [],
-    judge: { beatTolerance: 0.12 },
+    judge: { beatTolerance: gameConfig.generation.judgeBeatTolerance },
     models: defaultAnimalModelRegistry,
     referenceSolution: layout.referenceSolution,
   });
@@ -201,7 +197,16 @@ function buildBlockDrafts(rectangles: RectanglePlacementDraft[]) {
 
 /** Computes a block-count target from timeline length, biased slightly high for puzzle variety. */
 function getTargetBlockCount(loopBeats: number, animalCount: number) {
-  return Math.max(6, Math.min(16, Math.round(loopBeats * 1.25 + animalCount)));
+  return Math.max(
+    gameConfig.generation.targetBlockCount.min,
+    Math.min(
+      gameConfig.generation.targetBlockCount.max,
+      Math.round(
+        loopBeats * gameConfig.generation.targetBlockCount.loopBeatFactor +
+          animalCount * gameConfig.generation.targetBlockCount.animalCountFactor,
+      ),
+    ),
+  );
 }
 
 /** Tries to add more route-covered solution blocks while keeping resulting rhythm density readable. */

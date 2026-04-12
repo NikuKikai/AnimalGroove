@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { gameConfig } from "../config/gameConfig";
 import type { Placement } from "../types";
 import type { HitPulse } from "./sceneTypes";
 
@@ -30,13 +31,17 @@ export function createBlockMesh(
   const group = new THREE.Group();
 
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(width - 0.08, 0.24, height - 0.08),
+    new THREE.BoxGeometry(
+      width - gameConfig.scene.mesh.buttonBlockInset,
+      gameConfig.scene.mesh.buttonBlockHeight,
+      height - gameConfig.scene.mesh.buttonBlockInset,
+    ),
     new THREE.MeshStandardMaterial({
       color,
       emissive: "#000000",
       emissiveIntensity: 0,
-      roughness: 0.82,
-      metalness: 0.04,
+      roughness: gameConfig.scene.mesh.buttonBlockRoughness,
+      metalness: gameConfig.scene.mesh.buttonBlockMetalness,
       transparent: opacity < 1,
       opacity,
     }),
@@ -44,7 +49,10 @@ export function createBlockMesh(
   group.add(body);
 
   const iconPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(Math.max(0.4, width * 0.52), Math.max(0.4, height * 0.52)),
+    new THREE.PlaneGeometry(
+      Math.max(gameConfig.scene.mesh.iconMinimumSize, width * gameConfig.scene.mesh.iconScaleFactor),
+      Math.max(gameConfig.scene.mesh.iconMinimumSize, height * gameConfig.scene.mesh.iconScaleFactor),
+    ),
     new THREE.MeshBasicMaterial({
       map: getIconTexture(iconTextureCache, timbre),
       transparent: true,
@@ -52,9 +60,9 @@ export function createBlockMesh(
     }),
   );
   iconPlane.rotation.x = -Math.PI / 2;
-  iconPlane.position.y = 0.125;
+  iconPlane.position.y = gameConfig.scene.mesh.iconY;
   group.add(iconPlane);
-  group.add(createPickProxy(width, height, 0.26));
+  group.add(createPickProxy(width, height, gameConfig.scene.mesh.buttonPickProxyHeight));
 
   return group;
 }
@@ -97,7 +105,7 @@ export function createBlockModelMesh(
     }
     group.add(model);
   }
-  group.add(createPickProxy(width, height, 0.12));
+  group.add(createPickProxy(width, height, gameConfig.scene.mesh.terrainPickProxyHeight));
 
   return group;
 }
@@ -122,13 +130,22 @@ export function getDisplayOffset(block: { width: number; height: number }, rotat
 
 /** Creates one additive pulse ring mesh for block hit feedback. */
 export function createHitPulseMesh(state: HitPulse["state"]) {
-  const color = state === "matched" ? "#1db65f" : state === "wrong" ? "#d63b35" : "#f1f1f1";
+  const color =
+    state === "matched"
+      ? gameConfig.scene.hitPulse.colors.matched
+      : state === "wrong"
+        ? gameConfig.scene.hitPulse.colors.wrong
+        : gameConfig.scene.hitPulse.colors.empty;
   const mesh = new THREE.Mesh(
-    new THREE.RingGeometry(0.3, 0.42, 40),
+    new THREE.RingGeometry(
+      gameConfig.scene.mesh.hitPulse.innerRadius,
+      gameConfig.scene.mesh.hitPulse.outerRadius,
+      gameConfig.scene.mesh.hitPulse.segments,
+    ),
     new THREE.MeshBasicMaterial({
       color,
       transparent: true,
-      opacity: 0.88,
+      opacity: gameConfig.scene.mesh.hitPulse.opacity,
       depthWrite: false,
       blending: THREE.NormalBlending,
       side: THREE.DoubleSide,

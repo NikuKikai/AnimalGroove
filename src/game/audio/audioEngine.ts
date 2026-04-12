@@ -1,4 +1,5 @@
 import * as Tone from "tone";
+import { gameConfig } from "../config/gameConfig";
 import type { NoteState, RhythmEvent, TriggerEvent } from "../types";
 import type { AudioChannelKey, AudioMixState } from "../state/gameStore";
 
@@ -12,12 +13,7 @@ type ChannelNode = {
   foleyPlayers: Map<string, Tone.Player>;
 };
 
-const foleySourceMap: Record<string, string> = {
-  sand: "./SE/step_sand.mp3",
-  puddle: "./SE/step_puddle.mp3",
-  leaf: "./SE/step_leaf.mp3",
-};
-const foleyGainFactor = 0.72;
+const foleySourceMap: Record<string, string> = gameConfig.audio.foley.sources;
 
 /** Owns the synth and sample graph used for reference, hit, and wrong-note playback. */
 export class AudioEngine {
@@ -26,9 +22,9 @@ export class AudioEngine {
   private lastScheduledTime = 0;
 
   private mix: AudioMixState = {
-    hit: { volume: 1.05, muted: false },
-    reference: { volume: 0.18, muted: false },
-    wrong: { volume: 0.4, muted: false },
+    hit: { ...gameConfig.audio.defaultMix.hit },
+    reference: { ...gameConfig.audio.defaultMix.reference },
+    wrong: { ...gameConfig.audio.defaultMix.wrong },
   };
 
   private channelNodes = this.createChannelNodes();
@@ -39,7 +35,7 @@ export class AudioEngine {
       return;
     }
 
-    Tone.getContext().lookAhead = 0.01;
+    Tone.getContext().lookAhead = gameConfig.audio.lookAhead;
     await Tone.start();
     await Tone.loaded();
     this.started = true;
@@ -61,7 +57,7 @@ export class AudioEngine {
     }
 
     try {
-      this.playOneShot("reference", note.timbre, this.nextTime(), 0.45);
+      this.playOneShot("reference", note.timbre, this.nextTime(), gameConfig.audio.triggerVelocity.reference);
     } catch {
       return;
     }
@@ -78,7 +74,7 @@ export class AudioEngine {
         matched ? "hit" : "wrong",
         trigger.timbre,
         this.nextTime(),
-        (matched ? 0.95 : 0.5) * trigger.weight,
+        (matched ? gameConfig.audio.triggerVelocity.matched : gameConfig.audio.triggerVelocity.wrong) * trigger.weight,
       );
     } catch {
       return;
@@ -102,7 +98,10 @@ export class AudioEngine {
       if (!player || !player.loaded) {
         return;
       }
-      player.volume.value = Tone.gainToDb(Math.min(1.8, Math.max(0.05, velocity)) * foleyGainFactor);
+      player.volume.value = Tone.gainToDb(
+        Math.min(gameConfig.audio.foley.maximumGain, Math.max(gameConfig.audio.foley.minimumGain, velocity)) *
+          gameConfig.audio.foley.gainFactor,
+      );
       player.start(time, 0);
       return;
     }
@@ -133,7 +132,7 @@ export class AudioEngine {
       for (const [timbre, source] of Object.entries(foleySourceMap)) {
         const player = new Tone.Player(source);
         player.autostart = false;
-        player.fadeOut = 0.03;
+        player.fadeOut = gameConfig.audio.foley.fadeOut;
         player.connect(input);
         foleyPlayers.set(timbre, player);
       }
@@ -150,8 +149,8 @@ export class AudioEngine {
 
   /** Returns a strictly increasing Tone.js schedule time. */
   private nextTime() {
-    const now = Tone.now() + 0.003;
-    const next = Math.max(now, this.lastScheduledTime + 0.0005);
+    const now = Tone.now() + gameConfig.audio.scheduleLeadTime;
+    const next = Math.max(now, this.lastScheduledTime + gameConfig.audio.minimumScheduleGap);
     this.lastScheduledTime = next;
     return next;
   }
@@ -167,18 +166,18 @@ function getSynthConfig(style: VoiceStyle) {
   switch (style) {
     case "hit":
       return {
-        oscillator: { type: "triangle" as const },
-        envelope: { attack: 0.003, decay: 0.08, sustain: 0.08, release: 0.08 },
+        oscillator: { type: gameConfig.audio.synth.hit.oscillator },
+        envelope: { ...gameConfig.audio.synth.hit.envelope },
       };
     case "wrong":
       return {
-        oscillator: { type: "square" as const },
-        envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.035 },
+        oscillator: { type: gameConfig.audio.synth.wrong.oscillator },
+        envelope: { ...gameConfig.audio.synth.wrong.envelope },
       };
     case "reference":
       return {
-        oscillator: { type: "sine" as const },
-        envelope: { attack: 0.004, decay: 0.12, sustain: 0, release: 0.05 },
+        oscillator: { type: gameConfig.audio.synth.reference.oscillator },
+        envelope: { ...gameConfig.audio.synth.reference.envelope },
       };
   }
 }
@@ -187,9 +186,9 @@ function getSynthConfig(style: VoiceStyle) {
 function getFilter(style: VoiceStyle) {
   switch (style) {
     case "wrong":
-      return new Tone.Filter(1800, "highpass");
+      return new Tone.Filter(gameConfig.audio.filters.wrongHighpassHz, "highpass");
     case "reference":
-      return new Tone.Filter(500, "lowpass");
+      return new Tone.Filter(gameConfig.audio.filters.referenceLowpassHz, "lowpass");
     default:
       return undefined;
   }
@@ -199,11 +198,11 @@ function getFilter(style: VoiceStyle) {
 function getDuration(style: VoiceStyle) {
   switch (style) {
     case "hit":
-      return "16n";
+      return gameConfig.audio.durations.hit;
     case "wrong":
-      return "32n";
+      return gameConfig.audio.durations.wrong;
     case "reference":
-      return "16n";
+      return gameConfig.audio.durations.reference;
   }
 }
 
@@ -211,16 +210,16 @@ function getDuration(style: VoiceStyle) {
 function mapTimbreToPitch(timbre: string) {
   switch (timbre) {
     case "kick":
-      return "C2";
+      return gameConfig.audio.pitches.kick;
     case "snare":
-      return "G2";
+      return gameConfig.audio.pitches.snare;
     case "hat":
-      return "C4";
+      return gameConfig.audio.pitches.hat;
     case "clap":
-      return "D4";
+      return gameConfig.audio.pitches.clap;
     case "tom":
-      return "F2";
+      return gameConfig.audio.pitches.tom;
     default:
-      return "A3";
+      return gameConfig.audio.pitches.default;
   }
 }

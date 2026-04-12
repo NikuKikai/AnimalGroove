@@ -1,19 +1,20 @@
 import { create } from "zustand";
 import { levels } from "../../data/levels";
+import { gameConfig } from "../config/gameConfig";
 import { evaluatePlacements, generateLevelFromPaths, getInitialPlacements, solveLevel, validatePlacements } from "../simulation";
 import type { LevelDefinition, Placement, SimulationResult } from "../types";
 
 export type AudioChannelKey = "hit" | "reference" | "wrong";
 
 export type AudioMixState = Record<AudioChannelKey, { volume: number; muted: boolean }>;
-const AUDIO_MIX_STORAGE_KEY = "animal-groove-audio-mix";
+const AUDIO_MIX_STORAGE_KEY = gameConfig.audio.storageKey;
 
 /** Returns the default audio mix used when there is no persisted user preference. */
 function getDefaultAudioMix(): AudioMixState {
   return {
-    hit: { volume: 1.05, muted: false },
-    reference: { volume: 0.18, muted: false },
-    wrong: { volume: 0.4, muted: false },
+    hit: { ...gameConfig.audio.defaultMix.hit },
+    reference: { ...gameConfig.audio.defaultMix.reference },
+    wrong: { ...gameConfig.audio.defaultMix.wrong },
   };
 }
 
@@ -106,7 +107,7 @@ function computeSimulation(level: LevelDefinition, placements: Placement[]) {
 /** Builds a random but solvable test level and returns its generated identifier. */
 function buildRandomLevel(serial: number) {
   const seed = Date.now() + serial * 9973;
-  const loopBeatsOptions: readonly number[] = [6, 8];
+  const loopBeatsOptions = gameConfig.generation.defaultLoopBeatOptions;
   const loopBeats = loopBeatsOptions[seed % loopBeatsOptions.length] ?? 8;
   const levelId = `generated-${serial}`;
   const level = generateLevelFromPaths(levelId, {
@@ -114,7 +115,7 @@ function buildRandomLevel(serial: number) {
     loopBeats,
     animalCount: 2 + (seed % 2),
   });
-  const bpm = 96 + (seed % 33);
+  const bpm = gameConfig.generation.randomLevelBpmBase + (seed % gameConfig.generation.randomLevelBpmRange);
 
   return {
     ...level,

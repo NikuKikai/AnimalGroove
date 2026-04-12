@@ -1,8 +1,9 @@
 import type { RhythmEvent, TriggerEvent } from "../../game/types";
+import { gameConfig } from "../../game/config/gameConfig";
 
 /** Collects deterministic lane order for timeline rows. */
 export function collectTimelineLanes(targetRhythm: RhythmEvent[], producedTriggers: TriggerEvent[]) {
-  const preferred = ["kick", "snare", "hat"];
+  const preferred = gameConfig.timeline.preferredLanes;
   const seen = new Set<string>();
   const lanes: string[] = [];
 
@@ -29,7 +30,7 @@ export function computeCurveMatchPercent(target: RhythmEvent[], produced: Trigge
     return 100;
   }
 
-  const tolerance = Math.max(0.08, loopBeats * 0.02);
+  const tolerance = Math.max(gameConfig.timeline.curveToleranceMin, loopBeats * gameConfig.timeline.curveToleranceLoopRatio);
   const usedProduced = new Set<string>();
   let matchedCount = 0;
 
@@ -99,12 +100,12 @@ function buildPulsePath<T extends RhythmEvent | TriggerEvent>(
   getAmplitude: (event: T) => number,
 ) {
   const baseline = viewHeight - 1;
-  const pulseBeatWidth = Math.max(0.08, loopBeats * 0.018);
+  const pulseBeatWidth = Math.max(gameConfig.timeline.pulseWidthMin, loopBeats * gameConfig.timeline.pulseWidthLoopRatio);
   const segments: Array<{ leftBeat: number; rightBeat: number; amplitude: number }> = [];
 
   for (const event of events) {
     const amplitudeRaw = getAmplitude(event);
-    const amplitude = Math.max(0.15, Math.min(1, amplitudeRaw / normalizer));
+    const amplitude = Math.max(gameConfig.timeline.minimumAmplitude, Math.min(1, amplitudeRaw / normalizer));
     const wrapped = buildWrappedPulseSegments(event.beat, pulseBeatWidth * 0.5, loopBeats);
     for (const segment of wrapped) {
       segments.push({
@@ -119,7 +120,7 @@ function buildPulsePath<T extends RhythmEvent | TriggerEvent>(
   let path = `M 0 ${baseline}`;
 
   for (const segment of sorted) {
-    const topY = baseline - segment.amplitude * (viewHeight - 7);
+    const topY = baseline - segment.amplitude * (viewHeight - gameConfig.timeline.topPadding);
     const leftX = (segment.leftBeat / loopBeats) * viewWidth;
     const rightX = (segment.rightBeat / loopBeats) * viewWidth;
     path += ` L ${leftX.toFixed(2)} ${baseline} L ${leftX.toFixed(2)} ${topY.toFixed(2)} L ${rightX.toFixed(2)} ${topY.toFixed(2)} L ${rightX.toFixed(2)} ${baseline}`;

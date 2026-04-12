@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { gameConfig } from "../config/gameConfig";
 import { computePathMetrics } from "../simulation";
 
 /** Computes a small lateral offset so overlapping debug paths remain visually separable. */
@@ -6,7 +7,7 @@ export function computePathOffset(waypoints: { x: number; y: number }[], index: 
   const previous = waypoints[(index - 1 + waypoints.length) % waypoints.length];
   const next = waypoints[(index + 1) % waypoints.length];
   const tangent = new THREE.Vector2(next.x - previous.x, next.y - previous.y);
-  if (tangent.lengthSq() < 1e-6) {
+  if (tangent.lengthSq() < gameConfig.scene.blockModel.minimumScaleAxis) {
     return { x: 0, y: 0 };
   }
 
@@ -29,7 +30,7 @@ export function sampleAnimalPosition(
     return { ...waypoints[0], jumpHeight: 0 };
   }
 
-  const safeSpeed = Math.max(speed, 0.0001);
+  const safeSpeed = Math.max(speed, gameConfig.scene.animal.movementEpsilon);
   const cycleBeats = metrics.totalLength / safeSpeed;
   const relativeBeat = cycleBeats <= 0 ? 0 : (((beat - startPhaseBeat) % cycleBeats) + cycleBeats) % cycleBeats;
   const traveledDistance = relativeBeat * safeSpeed;
@@ -48,7 +49,7 @@ export function sampleAnimalPosition(
   const localT = (targetDistance - segmentStart) / segmentLength;
   const current = waypoints[segmentIndex];
   const next = waypoints[nextIndex];
-  const jumpHeight = Math.sin(localT * Math.PI) * 0.55;
+  const jumpHeight = Math.sin(localT * Math.PI) * gameConfig.scene.animal.jumpHeight;
 
   return {
     x: THREE.MathUtils.lerp(current.x, next.x, localT),

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioEngine } from "../game/audio/audioEngine";
+import { gameConfig } from "../game/config/gameConfig";
 import { Transport } from "../game/engine/transport";
 import type { HitPulse, PreviewPlacement } from "../game/render/threeScene";
 import { placementKey, ThreeScene } from "../game/render/threeScene";
@@ -109,9 +110,10 @@ export function BoardView() {
   const occupiedCells = useMemo(() => buildOccupiedCellSet(level, placements), [level, placements]);
   const pressedPlacementIds = useMemo(() => {
     const pressed = new Set<string>();
+    const activeWindow = gameConfig.interaction.pressedWindowBeats;
     for (const trigger of simulation.producedTriggers) {
       const delta = normalizedBeatDelta(currentBeat, trigger.beat, level.loopBeats);
-      if (delta >= 0 && delta <= 0.22) {
+      if (delta >= 0 && delta <= activeWindow) {
         const placement = placements.find((item) => placementKey(item) === trigger.placementInstanceId);
         if (placement) {
           pressed.add(placementKey(placement));
@@ -448,7 +450,7 @@ export function BoardView() {
       });
     }
 
-    const pulseDurationBeats = 0.52;
+      const pulseDurationBeats = gameConfig.scene.hitPulse.durationBeats;
     for (const [pulseId, pulse] of pulseMapRef.current) {
       if (normalizedBeatDelta(currentBeat, pulse.beat, level.loopBeats) > pulseDurationBeats) {
         pulseMapRef.current.delete(pulseId);
@@ -488,7 +490,7 @@ export function BoardView() {
 
 /** Detects whether a looping playback cursor crossed a target beat this frame. */
 function crossedBeat(previous: number, current: number, target: number) {
-  const epsilon = 0.0001;
+  const epsilon = gameConfig.interaction.beatCrossEpsilon;
   if (current >= previous) {
     return target > previous - epsilon && target <= current + epsilon;
   }

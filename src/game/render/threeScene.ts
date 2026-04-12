@@ -3,6 +3,7 @@ import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { blockTileModelPaths, getStaticObstacleDefinition, loadModelTemplate, preloadModelTemplates } from "../assets/modelAssets";
+import { gameConfig } from "../config/gameConfig";
 import { getAnimalProfile } from "../engine/animalRegistry";
 import { resolveBlockTimbre } from "../engine/blockTimbre";
 import type { LevelDefinition, Placement } from "../types";
@@ -36,24 +37,36 @@ type SceneState = {
 
 type CameraDragMode = "pan" | "rotate";
 
-const pathPalette = ["#ffaf45", "#58c4dd", "#ffc857", "#ff7f7f", "#b291ff", "#7bd389"];
-const SCENE_BACKGROUND_COLOR = "#0f1718";
-const ATMOSPHERIC_FOG_DENSITY = 0.02;
-
 /** Hosts the Three.js scene, persistent block meshes, and camera controls for one board view. */
 export class ThreeScene {
   private loadVersion = 0;
 
   private scene = new THREE.Scene();
 
-  private camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+  private camera = new THREE.PerspectiveCamera(
+    gameConfig.scene.camera.fov,
+    1,
+    gameConfig.scene.camera.near,
+    gameConfig.scene.camera.far,
+  );
 
   private renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   private composer: EffectComposer;
   private renderPass: RenderPass;
-  private topPointLight = new THREE.PointLight("#fff4d6", 10.5, 12, 1.0);
-  private keyDirectionalLight = new THREE.DirectionalLight("#ffffff", 1.9);
-  private topDirectionalLight = new THREE.DirectionalLight("#ffffff", 1.15);
+  private topPointLight = new THREE.PointLight(
+    gameConfig.scene.lights.topPoint.color,
+    gameConfig.scene.lights.topPoint.intensity,
+    gameConfig.scene.lights.topPoint.distance,
+    gameConfig.scene.lights.topPoint.decay,
+  );
+  private keyDirectionalLight = new THREE.DirectionalLight(
+    gameConfig.scene.lights.keyDirectional.color,
+    gameConfig.scene.lights.keyDirectional.intensity,
+  );
+  private topDirectionalLight = new THREE.DirectionalLight(
+    gameConfig.scene.lights.topDirectional.color,
+    gameConfig.scene.lights.topDirectional.intensity,
+  );
 
   private raycaster = new THREE.Raycaster();
 
@@ -61,13 +74,17 @@ export class ThreeScene {
 
   private boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
-  private orbitTarget = new THREE.Vector3(3.5, 0, 2.5);
+  private orbitTarget = new THREE.Vector3(
+    gameConfig.scene.camera.initialTarget.x,
+    gameConfig.scene.camera.initialTarget.y,
+    gameConfig.scene.camera.initialTarget.z,
+  );
 
-  private orbitYaw = Math.PI / 2;
+  private orbitYaw = gameConfig.scene.camera.initialYaw;
 
-  private orbitPitch = 0.82;
+  private orbitPitch = gameConfig.scene.camera.initialPitch;
 
-  private orbitDistance = 13.5;
+  private orbitDistance = gameConfig.scene.camera.initialDistance;
 
   private activeCameraDrag?: {
     mode: CameraDragMode;
@@ -97,8 +114,8 @@ export class ThreeScene {
   /** Creates the renderer, camera, and shared lighting rig. */
   constructor() {
     this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.scene.background = new THREE.Color(SCENE_BACKGROUND_COLOR);
-    this.scene.fog = new THREE.FogExp2(SCENE_BACKGROUND_COLOR, ATMOSPHERIC_FOG_DENSITY);
+    this.scene.background = new THREE.Color(gameConfig.scene.backgroundColor);
+    this.scene.fog = new THREE.FogExp2(gameConfig.scene.backgroundColor, gameConfig.scene.fogDensity);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.composer = new EffectComposer(this.renderer);
@@ -106,17 +123,31 @@ export class ThreeScene {
     this.composer.addPass(this.renderPass);
     this.updateCamera();
 
-    const ambientLight = new THREE.AmbientLight("#ffffff", 0.32);
-    this.keyDirectionalLight.position.set(6, 12, 4);
+    const ambientLight = new THREE.AmbientLight(
+      gameConfig.scene.lights.ambient.color,
+      gameConfig.scene.lights.ambient.intensity,
+    );
+    this.keyDirectionalLight.position.set(
+      gameConfig.scene.lights.keyDirectional.position.x,
+      gameConfig.scene.lights.keyDirectional.position.y,
+      gameConfig.scene.lights.keyDirectional.position.z,
+    );
     this.keyDirectionalLight.castShadow = true;
-    this.keyDirectionalLight.shadow.mapSize.set(1024, 1024);
-    this.keyDirectionalLight.shadow.radius = 2;
-    this.keyDirectionalLight.shadow.bias = -0.00012;
-    this.keyDirectionalLight.shadow.normalBias = 0.02;
-    this.topDirectionalLight.position.set(0, 20, 0);
+    this.keyDirectionalLight.shadow.mapSize.set(
+      gameConfig.scene.lights.keyDirectional.shadowMapSize,
+      gameConfig.scene.lights.keyDirectional.shadowMapSize,
+    );
+    this.keyDirectionalLight.shadow.radius = gameConfig.scene.lights.keyDirectional.shadowRadius;
+    this.keyDirectionalLight.shadow.bias = gameConfig.scene.lights.keyDirectional.shadowBias;
+    this.keyDirectionalLight.shadow.normalBias = gameConfig.scene.lights.keyDirectional.shadowNormalBias;
+    this.topDirectionalLight.position.set(
+      gameConfig.scene.lights.topDirectional.position.x,
+      gameConfig.scene.lights.topDirectional.position.y,
+      gameConfig.scene.lights.topDirectional.position.z,
+    );
     this.topDirectionalLight.target.position.set(0, 0, 0);
     this.topDirectionalLight.castShadow = false;
-    this.topPointLight.position.set(0, 3.8, 0);
+    this.topPointLight.position.set(0, gameConfig.scene.lights.topPoint.height, 0);
     this.scene.add(
       ambientLight,
       this.keyDirectionalLight,
@@ -165,13 +196,17 @@ export class ThreeScene {
     this.activeCameraDrag.pointerY = clientY;
 
     if (this.activeCameraDrag.mode === "rotate") {
-      this.orbitYaw += deltaX * 0.0035;
-      this.orbitPitch = THREE.MathUtils.clamp(this.orbitPitch - deltaY * 0.003, 0.0, Math.PI / 2);
+      this.orbitYaw += deltaX * gameConfig.scene.camera.rotateYawSpeed;
+      this.orbitPitch = THREE.MathUtils.clamp(
+        this.orbitPitch - deltaY * gameConfig.scene.camera.rotatePitchSpeed,
+        gameConfig.scene.camera.pitchMin,
+        gameConfig.scene.camera.pitchMax,
+      );
       this.updateCamera();
       return;
     }
 
-    const panScale = this.orbitDistance * 0.00115;
+    const panScale = this.orbitDistance * gameConfig.scene.camera.panDistanceFactor;
     const forward = new THREE.Vector3(
       this.camera.position.x - this.orbitTarget.x,
       0,
@@ -192,8 +227,12 @@ export class ThreeScene {
 
   /** Zooms the orbit camera in or out while staying within the configured distance range. */
   zoomCamera(deltaY: number) {
-    const zoomFactor = Math.exp(deltaY * 0.0012);
-    this.orbitDistance = THREE.MathUtils.clamp(this.orbitDistance * zoomFactor, 6.5, 28);
+    const zoomFactor = Math.exp(deltaY * gameConfig.scene.camera.zoomFactor);
+    this.orbitDistance = THREE.MathUtils.clamp(
+      this.orbitDistance * zoomFactor,
+      gameConfig.scene.camera.minDistance,
+      gameConfig.scene.camera.maxDistance,
+    );
     this.updateCamera();
   }
 
@@ -368,7 +407,7 @@ export class ThreeScene {
     for (let y = 0; y < level.board.height; y += 1) {
       for (let x = 0; x < level.board.width; x += 1) {
         const cellMesh = this.blockTiles.grass.clone(true);
-        cellMesh.position.set(x, 0, y);
+        cellMesh.position.set(x, gameConfig.scene.terrain.y, y);
         applyShadowFlags(cellMesh, { cast: false, receive: true });
         terrainRoot.add(cellMesh);
         this.state.terrainCells.set(`${x},${y}`, cellMesh);
@@ -383,18 +422,28 @@ export class ThreeScene {
   /** Fits the orbit camera target and distance to the active board bounds. */
   private fitCameraToBoard(level: LevelDefinition) {
     this.orbitTarget.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
-    this.topPointLight.position.set((level.board.width - 1) / 2, 3.8, (level.board.height - 1) / 2);
+    this.topPointLight.position.set(
+      (level.board.width - 1) / 2,
+      gameConfig.scene.lights.topPoint.height,
+      (level.board.height - 1) / 2,
+    );
     this.keyDirectionalLight.target.position.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
     this.topDirectionalLight.target.position.set((level.board.width - 1) / 2, 0, (level.board.height - 1) / 2);
-    const shadowSpan = Math.max(level.board.width, level.board.height) * 0.9 + 3;
+    const shadowSpan =
+      Math.max(level.board.width, level.board.height) * gameConfig.scene.lights.keyDirectional.shadowSpanFactor +
+      gameConfig.scene.lights.keyDirectional.shadowSpanPadding;
     this.keyDirectionalLight.shadow.camera.left = -shadowSpan;
     this.keyDirectionalLight.shadow.camera.right = shadowSpan;
     this.keyDirectionalLight.shadow.camera.top = shadowSpan;
     this.keyDirectionalLight.shadow.camera.bottom = -shadowSpan;
-    this.keyDirectionalLight.shadow.camera.near = 0.5;
-    this.keyDirectionalLight.shadow.camera.far = 80;
+    this.keyDirectionalLight.shadow.camera.near = gameConfig.scene.lights.keyDirectional.shadowNear;
+    this.keyDirectionalLight.shadow.camera.far = gameConfig.scene.lights.keyDirectional.shadowFar;
     this.keyDirectionalLight.shadow.camera.updateProjectionMatrix();
-    this.orbitDistance = THREE.MathUtils.clamp(Math.max(level.board.width, level.board.height) * 1.7, 8, 26);
+    this.orbitDistance = THREE.MathUtils.clamp(
+      Math.max(level.board.width, level.board.height) * gameConfig.scene.camera.fitDistanceFactor,
+      gameConfig.scene.camera.fitDistanceMin,
+      gameConfig.scene.camera.fitDistanceMax,
+    );
     this.clampCameraTarget(level);
     this.updateCamera();
   }
@@ -403,7 +452,7 @@ export class ThreeScene {
   private clampCameraTarget(level?: LevelDefinition) {
     const boardWidth = level?.board.width ?? this.currentBoardSize.width;
     const boardHeight = level?.board.height ?? this.currentBoardSize.height;
-    const padding = 3.5;
+    const padding = gameConfig.scene.camera.targetPadding;
     this.orbitTarget.x = THREE.MathUtils.clamp(this.orbitTarget.x, -padding, boardWidth - 1 + padding);
     this.orbitTarget.z = THREE.MathUtils.clamp(this.orbitTarget.z, -padding, boardHeight - 1 + padding);
   }
@@ -424,24 +473,28 @@ export class ThreeScene {
   private addPaths(level: LevelDefinition) {
     for (let index = 0; index < level.animals.length; index += 1) {
       const animal = level.animals[index];
-      const color = pathPalette[index % pathPalette.length];
-      const offsetStrength = ((index % 5) - 2) * 0.06;
+      const color = gameConfig.scene.pathPalette[index % gameConfig.scene.pathPalette.length];
+      const offsetStrength = ((index % 5) - 2) * gameConfig.scene.path.overlapOffsetStep;
       const points = animal.path.waypoints.map((point, pointIndex, waypoints) => {
         const offset = computePathOffset(waypoints, pointIndex, offsetStrength);
-        return new THREE.Vector3(point.x + offset.x, 0.08 + index * 0.003, point.y + offset.y);
+        return new THREE.Vector3(
+          point.x + offset.x,
+          gameConfig.scene.path.verticalOffset + index * gameConfig.scene.path.perPathLift,
+          point.y + offset.y,
+        );
       });
       const firstOffset = computePathOffset(animal.path.waypoints, 0, offsetStrength);
       points.push(
         new THREE.Vector3(
           animal.path.waypoints[0].x + firstOffset.x,
-          0.08 + index * 0.003,
+          gameConfig.scene.path.verticalOffset + index * gameConfig.scene.path.perPathLift,
           animal.path.waypoints[0].y + firstOffset.y,
         ),
       );
       const geometry = new THREE.BufferGeometry().setFromPoints(points);
       const line = new THREE.Line(
         geometry,
-        new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity: gameConfig.scene.path.opacity }),
       );
       this.state.pathLines.push(line);
       this.scene.add(line);
@@ -457,14 +510,18 @@ export class ThreeScene {
 
     for (let index = 0; index < level.animals.length; index += 1) {
       const animal = level.animals[index];
-      const fallbackColor = pathPalette[index % pathPalette.length];
+      const fallbackColor = gameConfig.scene.pathPalette[index % gameConfig.scene.pathPalette.length];
       const fallback = new THREE.Mesh(
-        new THREE.SphereGeometry(0.25, 16, 16),
+        new THREE.SphereGeometry(
+          gameConfig.scene.animal.fallbackRadius,
+          gameConfig.scene.animal.fallbackSegments,
+          gameConfig.scene.animal.fallbackSegments,
+        ),
         new THREE.MeshStandardMaterial({ color: fallbackColor }),
       );
       fallback.castShadow = true;
       fallback.receiveShadow = true;
-      fallback.position.set(0, 0.3, 0);
+      fallback.position.set(0, gameConfig.scene.animal.fallbackY, 0);
       this.state.animalFallbacks.set(animal.id, fallback);
       this.scene.add(fallback);
 
@@ -483,8 +540,8 @@ export class ThreeScene {
         const root = cloneSkinned(template);
         normalizeImportedModelMaterials(root);
         applyShadowFlags(root, { cast: true, receive: true });
-        root.scale.setScalar(0.35);
-        root.position.set(0, 0.18, 0);
+        root.scale.setScalar(gameConfig.scene.animal.modelScale);
+        root.position.set(0, gameConfig.scene.animal.modelY, 0);
         this.state.animalRoots.set(animal.id, root);
         this.scene.add(root);
         fallback.visible = false;
@@ -508,7 +565,7 @@ export class ThreeScene {
       const nextPoint = sampleAnimalPosition(
         animal.path.waypoints,
         getAnimalProfile(animal.animalType).speed,
-        beat + 0.05,
+        beat + gameConfig.scene.animal.lookAheadBeat,
         animal.path.startPhaseBeat ?? 0,
       );
       const root = this.state.animalRoots.get(animal.id) ?? this.state.animalFallbacks.get(animal.id);
@@ -559,9 +616,9 @@ export class ThreeScene {
         const timbre = resolveBlockTimbre(block.blockId);
         const previewColor =
           previewState === "invalid"
-            ? "#ff5f57"
+            ? gameConfig.scene.preview.invalidColor
             : previewState === "valid"
-              ? lightenHexColor(block.color, 0.3)
+              ? lightenHexColor(block.color, gameConfig.scene.preview.validLightenAmount)
               : block.color;
         mesh =
           visualKind === "terrain"
@@ -587,8 +644,8 @@ export class ThreeScene {
       }
 
       const isPressed = previewState === "none" && pressedPlacementIds.has(placementKey(placement));
-      const pressDepth = visualKind === "button" && isPressed ? 0.1 : 0;
-      const nextScaleY = visualKind === "button" && isPressed ? 0.52 : 1;
+      const pressDepth = visualKind === "button" && isPressed ? gameConfig.scene.blockPress.depth : 0;
+      const nextScaleY = visualKind === "button" && isPressed ? gameConfig.scene.blockPress.scaleY : 1;
       if (mesh.userData.lastScaleY !== nextScaleY) {
         mesh.scale.y = nextScaleY;
         mesh.userData.lastScaleY = nextScaleY;
@@ -631,7 +688,7 @@ export class ThreeScene {
 
   /** Updates expanding pulse meshes at each animal landing point. */
   private updateHitPulses(level: LevelDefinition, beat: number, hitPulses: HitPulse[]) {
-    const durationBeats = 0.52;
+    const durationBeats = gameConfig.scene.hitPulse.durationBeats;
     for (const mesh of this.state.hitPulseMeshes.values()) {
       mesh.visible = false;
     }
@@ -651,15 +708,20 @@ export class ThreeScene {
 
       const progress = Math.max(0, Math.min(1, age / durationBeats));
       const material = effectMesh.material as THREE.MeshBasicMaterial;
-      const color = pulse.state === "matched" ? "#1db65f" : pulse.state === "wrong" ? "#d63b35" : "#f1f1f1";
+      const color =
+        pulse.state === "matched"
+          ? gameConfig.scene.hitPulse.colors.matched
+          : pulse.state === "wrong"
+            ? gameConfig.scene.hitPulse.colors.wrong
+            : gameConfig.scene.hitPulse.colors.empty;
       material.color.set(color);
       const isEmpty = pulse.state === "empty";
-      const baseOpacity = isEmpty ? 0.5 : 1.0;
-      const baseScale = isEmpty ? 0.1 : 0.9;
-      const growth = isEmpty ? 0.6 : 1.3;
+      const baseOpacity = isEmpty ? gameConfig.scene.hitPulse.emptyOpacity : gameConfig.scene.hitPulse.defaultOpacity;
+      const baseScale = isEmpty ? gameConfig.scene.hitPulse.emptyScale : gameConfig.scene.hitPulse.defaultScale;
+      const growth = isEmpty ? gameConfig.scene.hitPulse.emptyGrowth : gameConfig.scene.hitPulse.defaultGrowth;
       material.opacity = (1 - progress) * (1 - progress) * baseOpacity;
       effectMesh.scale.setScalar(baseScale + progress * growth);
-      effectMesh.position.set(pulse.cell.x, 0.02, pulse.cell.y);
+      effectMesh.position.set(pulse.cell.x, gameConfig.scene.hitPulse.y, pulse.cell.y);
       effectMesh.visible = true;
     }
   }
@@ -712,11 +774,11 @@ export class ThreeScene {
       const obstacleMesh = template
         ? template.clone(true)
         : new THREE.Mesh(
-          new THREE.BoxGeometry(definition.width, 0.55, definition.height),
+          new THREE.BoxGeometry(definition.width, gameConfig.scene.mesh.obstacleFallbackHeight, definition.height),
           new THREE.MeshStandardMaterial({
             color: definition.color ?? "#5d7a63",
-            roughness: 0.88,
-            metalness: 0.04,
+            roughness: gameConfig.scene.mesh.obstacleFallbackRoughness,
+            metalness: gameConfig.scene.mesh.obstacleFallbackMetalness,
           }),
         );
       normalizeImportedModelMaterials(obstacleMesh);
@@ -812,7 +874,7 @@ export class ThreeScene {
     const initialBounds = new THREE.Box3().setFromObject(normalized);
     const initialSize = new THREE.Vector3();
     initialBounds.getSize(initialSize);
-    const dominantXZ = Math.max(initialSize.x, initialSize.z, 1e-6);
+    const dominantXZ = Math.max(initialSize.x, initialSize.z, gameConfig.scene.blockModel.minimumScaleAxis);
     const uniformScale = 1 / dominantXZ;
     normalized.scale.multiplyScalar(uniformScale);
 
