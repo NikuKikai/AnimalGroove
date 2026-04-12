@@ -84,7 +84,6 @@ export function generateLevelFromGroove(id: string, rhythm: RhythmEvent[]): Leve
       id: `animal-${index + 1}`,
       name: `${plan.timbre} runner ${index + 1}`,
       animalType: plan.animalType,
-      timbre: plan.timbre,
       path: {
         waypoints,
         startPhaseBeat: plan.startPhaseBeat,

@@ -23,7 +23,7 @@ export function collectTimelineLanes(targetRhythm: RhythmEvent[], producedTrigge
   return lanes;
 }
 
-/** Computes a weighted rhythm match score from timing precision and amplitude similarity. */
+/** Computes an event-level IoU rhythm score using one-to-one timbre-aware matching. */
 export function computeCurveMatchPercent(target: RhythmEvent[], produced: TriggerEvent[], loopBeats: number) {
   if (target.length === 0 && produced.length === 0) {
     return 100;
@@ -31,9 +31,7 @@ export function computeCurveMatchPercent(target: RhythmEvent[], produced: Trigge
 
   const tolerance = Math.max(0.08, loopBeats * 0.02);
   const usedProduced = new Set<string>();
-  let matched = 0;
-  let timingScore = 0;
-  let amplitudeScore = 0;
+  let matchedCount = 0;
 
   for (const note of target) {
     let best: TriggerEvent | undefined;
@@ -56,30 +54,17 @@ export function computeCurveMatchPercent(target: RhythmEvent[], produced: Trigge
     }
 
     usedProduced.add(best.id);
-    matched += 1;
-    timingScore += 1 - Math.max(0, Math.min(1, bestDistance / tolerance));
-    const targetAmp = Math.max(0.01, note.velocity ?? 1);
-    const producedAmp = Math.max(0.01, mapTriggerWeightToTargetVelocity(best.weight));
-    const ampDiff = Math.abs(targetAmp - producedAmp) / Math.max(targetAmp, producedAmp);
-    amplitudeScore += 1 - Math.max(0, Math.min(1, ampDiff));
+    matchedCount += 1;
   }
 
-  const misses = Math.max(0, target.length - matched);
-  const extras = Math.max(0, produced.length - matched);
+  const misses = Math.max(0, target.length - matchedCount);
+  const extras = Math.max(0, produced.length - matchedCount);
   if (misses === 0 && extras === 0) {
     return 100;
   }
-  const precision = matched / Math.max(1, matched + extras);
-  const recall = matched / Math.max(1, matched + misses);
-  const timing = matched > 0 ? timingScore / matched : 0;
-  const amplitude = matched > 0 ? amplitudeScore / matched : 0;
-  const score = precision * 0.42 + recall * 0.38 + timing * 0.12 + amplitude * 0.08;
-  return Math.max(0, Math.min(100, score * 100));
-}
-
-/** Mirrors the runtime velocity mapping used when target notes are generated from trigger weights. */
-function mapTriggerWeightToTargetVelocity(weight: number) {
-  return Math.min(1.2, 0.6 + weight * 0.3);
+  const union = target.length + produced.length - matchedCount;
+  const iou = union <= 0 ? 0 : matchedCount / union;
+  return Math.max(0, Math.min(100, iou * 100));
 }
 
 /** Builds a closed area path for target pulses using event velocity as height. */

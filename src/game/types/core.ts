@@ -22,7 +22,6 @@ export type AnimalDefinition = {
   id: string;
   name: string;
   animalType: string;
-  timbre: string;
   path: AnimalPath;
 };
 
@@ -39,10 +38,12 @@ export type LevelBlock = {
   name: string;
   width: number;
   height: number;
-  timbre: string;
   canRotate?: boolean;
   color: string;
-  initialPlacement: Placement;
+  initialPlacement: {
+    origin: Vec2;
+    rotation: 0 | 90;
+  };
 };
 
 export type PlaceableBlock = LevelBlock;

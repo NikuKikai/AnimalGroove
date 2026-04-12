@@ -7,6 +7,7 @@ import type {
   Vec2,
 } from "../types";
 import { getAnimalProfile } from "../engine/animalRegistry";
+import { resolveBlockTimbre } from "../engine/blockTimbre";
 
 export type OccupiedCell = {
   placement: Placement;
@@ -192,7 +193,7 @@ export function buildTriggerEvents(level: LevelDefinition, placements: Placement
       triggers.push({
         id: `${animal.id}-${hit.placement.pieceId}-${visit.beat.toFixed(3)}-${visit.cell.x}-${visit.cell.y}`,
         beat: visit.beat,
-        timbre: hit.block.timbre,
+        timbre: resolveBlockTimbre(hit.block.blockId),
         animalId: animal.id,
         animalType: animal.animalType,
         weight: profile.weight,

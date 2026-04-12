@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { blockTileModelPaths, loadModelTemplate, preloadModelTemplates } from "../assets/modelAssets";
 import { getAnimalProfile } from "../engine/animalRegistry";
+import { resolveBlockTimbre } from "../engine/blockTimbre";
 import type { LevelDefinition, Placement } from "../types";
 import { placementInstanceKey } from "../simulation";
 import {
@@ -500,12 +501,13 @@ export class ThreeScene {
       }
 
       if (!mesh) {
+        const timbre = resolveBlockTimbre(block.blockId);
         mesh =
           visualKind === "terrain"
-            ? createBlockModelMesh(this.blockTiles, block.timbre, block, placement.rotation, 1, previewState)
+            ? createBlockModelMesh(this.blockTiles, timbre, block, placement.rotation, 1, previewState)
             : createBlockMesh(
               this.state.iconTextureCache,
-              block.timbre,
+              timbre,
               previewState === "invalid" ? "#ff5f57" : block.color,
               block,
               placement.rotation,

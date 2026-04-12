@@ -47,12 +47,9 @@ export function materializeLevelLayout(
       name: draft.name,
       width: draft.width,
       height: draft.height,
-      timbre: draft.timbre,
       canRotate: draft.canRotate,
       color: draft.color,
       initialPlacement: {
-        blockId: draft.blockId,
-        pieceId,
         origin: initialPlacement?.origin ?? draft.solutionOrigin,
         rotation: initialPlacement?.rotation ?? draft.solutionRotation,
       },

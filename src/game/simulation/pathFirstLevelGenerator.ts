@@ -112,7 +112,6 @@ function buildAnimals(loopBeats: number, animalCount: number, rng: () => number)
       id: `animal-${index + 1}`,
       name: `${animalType} runner ${index + 1}`,
       animalType,
-      timbre: ["kick", "snare", "hat"][index % 3],
       path: {
         waypoints: path,
         startPhaseBeat: Number((rng() * loopBeats).toFixed(2)),

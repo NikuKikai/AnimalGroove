@@ -181,7 +181,6 @@ export const useGameStore = create<GameState>((set, get) => {
       const level = getLevelById(get().levels, get().activeLevelId);
       const solvedPlacements = level.referenceSolution ?? solveLevel(level).placements;
       const currentByPiece = new Map(get().placements.map((placement) => [placement.pieceId, placement]));
-      const solutionPieceIds = new Set(solvedPlacements.map((placement) => placement.pieceId));
       const placements = get().placements.map((placement) => {
         const solved = solvedPlacements.find((candidate) => candidate.pieceId === placement.pieceId);
         return solved ?? placement;
@@ -192,16 +191,6 @@ export const useGameStore = create<GameState>((set, get) => {
           continue;
         }
         placements.push(solved);
-      }
-
-      for (const block of level.blocks) {
-        if (solutionPieceIds.has(block.pieceId)) {
-          continue;
-        }
-        if (placements.some((placement) => placement.pieceId === block.pieceId)) {
-          continue;
-        }
-        placements.push(block.initialPlacement);
       }
       set({
         placements,
