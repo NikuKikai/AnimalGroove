@@ -919,20 +919,6 @@ function getFootprintCells(
   return cells;
 }
 
-/** Enumerates occupied board cells for one static obstacle placement. */
-function getObstacleFootprint(obstaclePlacement: NonNullable<LevelDefinition["staticObstacles"]>[number]) {
-  const definition = getStaticObstacleDefinition(obstaclePlacement.obstacleId);
-  const width = definition ? (obstaclePlacement.rotation === 90 ? definition.height : definition.width) : 1;
-  const height = definition ? (obstaclePlacement.rotation === 90 ? definition.width : definition.height) : 1;
-  const cells: Array<{ x: number; y: number }> = [];
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      cells.push({ x: obstaclePlacement.origin.x + x, y: obstaclePlacement.origin.y + y });
-    }
-  }
-  return cells;
-}
-
 /** Returns a stable key for one static obstacle placement instance. */
 function obstaclePlacementKey(obstaclePlacement: NonNullable<LevelDefinition["staticObstacles"]>[number]) {
   return `${obstaclePlacement.obstacleId}:${obstaclePlacement.origin.x}:${obstaclePlacement.origin.y}:${obstaclePlacement.rotation}`;

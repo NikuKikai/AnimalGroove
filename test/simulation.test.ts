@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ensembleLevel, tutorialLevel } from "../src/data/levels";
 import { evaluatePlacements, generateLevelFromGroove, generateLevelFromPaths, solveLevel } from "../src/game/simulation";
-import type { RhythmEvent } from "../src/game/types";
+import type { LevelBlock, RhythmEvent } from "../src/game/types";
 
 const tutorialKickPieces = tutorialLevel.blocks
-  .filter((block) => block.blockId === "sand-single")
-  .map((block) => block.pieceId);
+  .filter((block: LevelBlock) => block.blockId === "sand-single")
+  .map((block: LevelBlock) => block.pieceId);
 
 describe("simulation", () => {
   it("solves the tutorial reference placements", () => {

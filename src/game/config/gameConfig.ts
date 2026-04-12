@@ -214,4 +214,4 @@ export const gameConfig = {
       animalCountFactor: 1,
     },
   },
-} as const;
+};
